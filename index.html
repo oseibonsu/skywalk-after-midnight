@@ -541,8 +541,8 @@ function gunPixel(col,row,o){// o: {slide, cyl, open, loaded}
  if(row<0||row>=GUN_ART.length||col<0||col>=9)return null;const ch=GUN_ART[row][col];if(ch==='.')return null;
  if(ch==='C'){const k=(col+row+(o.cyl||0))%2;return k?'#2a2e35':'#565c68';}
  if(ch==='U'&&row===1)return '#4b515c';if(ch==='G'&&(col+row)%3===0)return '#3e2818';return GUN_C[ch];}
-function drawGun(g,hand,angDeg,o){const a=angDeg*D2R,ca=Math.cos(a),sa=Math.sin(a);const ox=hand[0]+0.5,oy=hand[1]+0.5;let muzzle=null;
- for(let Y=Math.floor(oy-11);Y<=Math.ceil(oy+11);Y++)for(let X=Math.floor(ox-11);X<=Math.ceil(ox+11);X++){const dx=X+0.5-ox,dy=Y+0.5-oy;const u=dx*ca+dy*sa,v=-dx*sa+dy*ca;
+function drawGun(g,hand,angDeg,o){const a=angDeg*D2R,ca=Math.cos(a),sa=Math.sin(a);const ox=hand[0]+0.5,oy=hand[1]+0.5,sy=o.sy||1;let muzzle=null;// sy<1: squashed flat (lying on a table, seen from just above)
+ for(let Y=Math.floor(oy-11);Y<=Math.ceil(oy+11);Y++)for(let X=Math.floor(ox-11);X<=Math.ceil(ox+11);X++){const dx=X+0.5-ox,dy=(Y+0.5-oy)/sy;const u=dx*ca+dy*sa,v=-dx*sa+dy*ca;
   const col=Math.floor(u+GUN_O[0]),row=Math.floor(v+GUN_O[1]);const c=gunPixel(col,row,o);if(c)px(g,c,X,Y);}
  const mu=8.5-GUN_O[0]+(o.slide?-1:0),mv=3.5-GUN_O[1];muzzle=[ox+mu*ca-mv*sa,oy+mu*sa+mv*ca];return muzzle;}
 function drawFigure(P,rootY){const [c,g]=cv(FW,FH);const J=joints(P,HIPX,rootY);
@@ -1071,7 +1071,7 @@ else{let gait;
  else gait='run';
  P.shoveAnim=gait==='walk'&&P.shoving&&GUN.mode==='holstered';
  if(!gait){if(P.crouchAmt>0.02){if(P.crouchAmt<0.99){nm='CK';fi=Math.round(P.crouchAmt*6);}else{nm='KI';fi=Math.floor(t*1.6)%4;}}
-  else if(P.fid&&LEVEL==='street'){nm=P.fid.name;fi=Math.min(FID[nm].n,Math.round(P.fid.t/FID[nm].dur*FID[nm].n));}else if(LEVEL==='club'){nm='GR';fi=Math.floor(clubBeats*4)%8;}else{nm='idle';fi=Math.floor(t*2.2)%4;}}
+  else if(P.fid&&LEVEL==='street'){nm=P.fid.name;fi=Math.min(FID[nm].n,Math.round(P.fid.t/FID[nm].dur*FID[nm].n));}else if(LEVEL==='club'&&GUN.mode==='holstered'){nm='GR';fi=Math.floor(clubBeats*4)%8;}/* he only grooves with empty hands: the groove pose has no aiming arm */else{nm='idle';fi=Math.floor(t*2.2)%4;}}
  else if(gait==='brake'){nm='brake';fi=Math.floor(t*12)%2;}
  else{// walking backwards (backpedalling while he aims) plays the gait in reverse
   const back=Math.sign(P.v)===-P.face,w=x=>((x%1)+1)%1;const prev=P.phase;P.phase+=(back?-1:1)*speed*dt/(P.shoveAnim?0.9:GAIT[gait].stride);nm=P.shoveAnim?'SH':gait;fi=Math.floor(w(P.phase)*NF)%NF;
@@ -1079,7 +1079,7 @@ else{let gait;
 // pivot frames are drawn for a right-to-left turn, so the set follows the direction he is turning from
 const dirSet=(P.state==='pivot')?P.face:(P.state==='turnw'?-P.turnTo:P.face);
 figMat.map=heroOverride()||figureTexture(nm,fi,dirSet);setFacing(dirSet);rainOnBody(dt,dirSet);streakSource(speed,dt);
-fig.position.set(P.x,P.y,0.7);blob.position.set(P.x,0.008,0.7);{const k=Math.max(0.35,1-P.y*0.45);blob.scale.set(k,k,1);blob.material.opacity=0.55*k;}
+fig.position.set(P.x,P.y,0.7+(P.dz||0));blob.position.set(P.x,0.008,0.7+(P.dz||0));// dz: stepping into the room's depth (the revolver pickup){const k=Math.max(0.35,1-P.y*0.45);blob.scale.set(k,k,1);blob.material.opacity=0.55*k;}
 let w=0;lightXs.forEach(([lx,k])=>{w+=Math.max(0,1-Math.abs(P.x-lx)/4.5)*k;});w=Math.min(1,w);
 tmp.copy(baseCol).lerp(warmCol,w);patrolTint(tmp);const tk=Math.max(0,1-Math.abs(P.x+8.5)/3),mk=Math.max(0,1-Math.abs(P.x-16.5)/3);
 tmp.r+=tealAdd.r*tk+magAdd.r*mk;tmp.g+=tealAdd.g*tk+magAdd.g*mk;tmp.b+=tealAdd.b*tk+magAdd.b*mk;if(LEVEL==='club')clubTint(tmp);if(LEVEL==='apt')aptTint(tmp,P.x);figMat.color.copy(tmp);if(GUN.flashT>0)figMat.color.setRGB(1.6,1.35,1.05);
@@ -1098,7 +1098,7 @@ camPos.set(cx,0.85-P.crouchAmt*0.15+P.y*0.35+Math.sin(t*0.27)*0.04*drift,0.7+cam
 camLook.set(P.x+1.1*P.look+Math.sin(t*0.09)*0.3*drift,1.75-P.crouchAmt*0.35+P.y*0.5,-1.6);
 if(lookout>0.001){camPos.lerp(headV.set(P.x-2.2,1.3,0.7+camDist()+1.5),lookout);camLook.lerp(dir.set(13,9.5,-20),lookout);}
 cineApply(camPos,camLook,dt);// directed shots at the story beats (23_cinema.js)
-if(!camInit){camera.position.copy(camPos);camInit=true;}else camera.position.lerp(camPos,Math.min(1,dt*5));
+if(!camInit){camera.position.copy(camPos);camInit=true;}else camera.position.lerp(camPos,Math.min(1,dt*(CINE.k||5)));
 if(P.state==='skid'&&!reduce){camera.position.y+=(Math.random()-0.5)*0.03*speed/RUN;}
 if(GUN.shake>0&&!reduce){camera.position.x+=(Math.random()-0.5)*0.05*GUN.shake;camera.position.y+=(Math.random()-0.5)*0.04*GUN.shake;}
 camera.lookAt(camLook);camera.rotateZ((-0.03+Math.sin(t*0.07)*0.012*drift)*(1-lookout*0.5));
@@ -1319,75 +1319,151 @@ tAim.addEventListener('pointerdown',e=>{e.preventDefault();GUN.aimHold=true;tAim
 function gunHud(){const drawn=GUN.mode!=='holstered';tDraw.textContent=drawn?'Holster':'Draw';document.body.classList.toggle('armed',drawn);}
 
 const AIM_WALK=0.9;let lastArmed=null;function gunHudSync(){const a=GUN.mode!=='holstered';if(a!==lastArmed){lastArmed=a;gunHud();}}
-
+// ================= THE POLICE CRUISER: a 3D model (used by the patrol flybys, the ride in and the ride home) =================
+// buildCruiser() returns {group, setLights(red,blue), setThrust(k)}.
+//   group: origin at the hull's centre; nose along +x, roof along +y; about 4.6 m long, 2 m wide, 1.3 m tall.
+//   setLights(red, blue): the roof light bar halves (and the corner strobes: red at the tail, blue at the nose) on or off.
+//   setThrust(k): 0..1, how hard the lift thrusters are glowing (hovering ~0.4, climbing 1).
+// An original design: a low armoured wedge with a set-back cabin, slab side skirts and four ducted lift pods.
+// Livery: navy and graphite, off-white door panels, a reflective stripe, unit marks in the invented glyph script.
+// Flat-shaded low-poly; every surface is a tiny pixel canvas. No real lights: emissive surfaces and halos carry the glow.
+let CRUISER_KIT=null;
+// a box whose bottom face spans x b0..b1 (half width wb, centred on zb) at y0 and top face spans x t0..t1 (wt, zt) at y1
+function crGeo(b0,b1,wb,zb,y0,t0,t1,wt,zt,y1){const g=new THREE.BoxGeometry(1,1,1),p=g.attributes.position;
+ for(let i=0;i<p.count;i++){const sx=p.getX(i)>0,sy=p.getY(i)>0,sz=p.getZ(i)>0?1:-1;p.setXYZ(i,sy?(sx?t1:t0):(sx?b1:b0),sy?y1:y0,sy?zt+sz*wt:zb+sz*wb);}
+ g.computeVertexNormals();return g;}
+function cruiserKit(){if(CRUISER_KIT)return CRUISER_KIT;
+ const std=(o)=>new THREE.MeshStandardMaterial(Object.assign({roughness:0.55,metalness:0.35,flatShading:true},o));
+ // hull plating: seams, a lighter edge and a few vents
+ const panel=(base,seam,hi)=>{const [c,g]=cv(32,32);px(g,base,0,0,32,32);px(g,hi,0,0,32,1);px(g,seam,0,15,32,1);px(g,hi,0,16,32,1);
+  [9,21].forEach(x=>px(g,seam,x,0,1,32));for(let y=4;y<12;y+=2)px(g,seam,24,y,6,1);px(g,seam,2,24,5,1);px(g,seam,2,27,5,1);return texPix(c);};
+ // side skirt livery, read rear (left) to nose (right)
+ const W=104,H=16;const [lc,lg]=cv(W,H),[ec,eg]=cv(W,H);px(eg,'#000',0,0,W,H);
+ px(lg,'#1d2738',0,0,W,H);px(lg,'#33425c',0,0,W,1);px(lg,'#141b27',0,13,W,3);px(lg,'#0b0f15',0,15,W,1);
+ for(let r=2;r<11;r++){const x0=30+((10-r)>>1);px(lg,'#d4dbe0',x0,r,74-x0,1);px(eg,'#353c41',x0,r,74-x0,1);}
+ px(lg,'#9aa6b0',30,10,44,1);px(lg,'#1d2738',53,2,1,9);px(lg,'#b9c3cb',54,2,1,9);// door seam
+ drawGlyphs(lg,[[[SEG[0],SEG[3],SEG[6],SEG[10]],34,3],[[SEG[7],SEG[1],SEG[4]],41,3],[[SEG[2],SEG[5],SEG[8],SEG[11]],57,3]],'#1d2738');
+ // unit crest: a split diamond with a lit eye
+ [[0,3],[1,2],[1,4],[2,1],[2,5],[3,0],[3,6],[4,1],[4,5],[5,2],[5,4],[6,3]].forEach(([x,y])=>px(lg,'#1d2738',64+x,3+y));px(lg,'#3fe6f0',67,6);px(eg,'#3fe6f0',67,6);
+ // reflective stripe, broken into dashes toward the nose
+ for(let x=3;x<101;x+=x>78?8:98){const w=x>78?6:76;px(lg,'#a9bfcf',x,11,Math.min(w,101-x),2);px(eg,'#5d7484',x,11,Math.min(w,101-x),2);}
+ px(lg,'#0d1117',14,2,1,9);px(lg,'#0d1117',86,2,1,9);for(let y=3;y<9;y+=2)px(lg,'#0d1117',4,y,8,1);// seams, rear vent
+ px(lg,'#ffae3a',100,5,2,2);px(eg,'#c07a1a',100,5,2,2);// nose marker
+ // hood: an off-white chevron pointing at the nose
+ const [hc,hg]=cv(32,16);px(hg,'#1d2738',0,0,32,16);for(let i=0;i<10;i++){px(hg,'#aeb8bf',3+i,3+i,3,1);px(hg,'#aeb8bf',26-i,3+i,3,1);}px(hg,'#33425c',0,0,32,1);px(hg,'#0d1117',15,0,2,16);
+ // canopy glass: dark tint, a sky streak, a faint teal glow inside and two instrument pixels
+ const glass=(pil)=>{const [c,g]=cv(32,10),[d,h]=cv(32,10);px(g,'#0a131a',0,0,32,10);px(h,'#000',0,0,32,10);
+  for(let i=0;i<6;i++)px(g,'#29434f',6+i*2,1+i,3,1);px(g,'#1d2738',0,0,32,1);
+  for(let y=4;y<10;y++)px(h,rgba('#1b5560',0.25+y*0.07),0,y,32,1);px(h,'#ffae3a',24,8);px(h,'#3fe6f0',27,8);px(h,'#3fe6f0',8,8);
+  pil.forEach(x=>{px(g,'#1d2738',x,0,2,10);px(h,'#000',x,0,2,10);});return std({map:texPix(c),emissiveMap:texPix(d),emissive:0xffffff,roughness:0.18,metalness:0.2});};
+ const fan=(()=>{const [c,g]=cv(16,16);px(g,'#3a6a78',0,0,16,16);g.fillStyle='#ffffff';g.beginPath();g.arc(8,8,6.5,0,7);g.fill();
+  px(g,'#5c8c9a',7,1,2,14);px(g,'#5c8c9a',1,7,14,2);px(g,'#2a4652',6,6,4,4);return texPix(c);})();
+ const jet=(()=>{const [c,g]=cv(4,32);const gr=g.createLinearGradient(0,0,0,32);gr.addColorStop(0,'rgba(220,250,255,1)');gr.addColorStop(0.35,'rgba(120,210,240,.35)');gr.addColorStop(1,'rgba(60,140,200,0)');g.fillStyle=gr;g.fillRect(0,0,4,32);return texSoft(c);})();
+ const navy=std({map:panel('#1d2738','#0f141d','#2a374d'),emissive:0x0b1220});
+ CRUISER_KIT={navy,
+  graph:std({map:panel('#1a1e25','#0c0e12','#262c35'),emissive:0x080a0e,metalness:0.5}),
+  livery:std({map:texPix(lc),emissiveMap:texPix(ec),emissive:0xffffff}),
+  hood:std({map:texPix(hc),emissive:0x0b1220}),
+  glassS:glass([0,17,30]),glassF:glass([0,30]),
+  metal:new THREE.MeshStandardMaterial({color:0x2b323c,roughness:0.4,metalness:0.7,side:THREE.DoubleSide}),
+  head:new THREE.MeshBasicMaterial({color:0xfff4dc}),tail:new THREE.MeshBasicMaterial({color:0xff2a3a}),lens:new THREE.MeshBasicMaterial({color:0xcfe4ff}),
+  fan,jet,G:{}};
+ return CRUISER_KIT;}
+function buildCruiser(){const K=cruiserKit(),G=K.G,group=new THREE.Group();
+ const geo=(k,f)=>G[k]||(G[k]=f());
+ const add=(g,m,x,y,z,rz)=>{const o=new THREE.Mesh(g,m);o.position.set(x||0,y||0,z||0);if(rz)o.rotation.z=rz;group.add(o);return o;};
+ const box=(k,w,h,d)=>geo(k,()=>new THREE.BoxGeometry(w,h,d));
+ const N=K.navy,Gr=K.graph;
+ // hull: a wedge nose (the long front face of the upper hull) over a chin that tucks back under
+ add(geo('up',()=>crGeo(-2.25,2.3,0.86,0,0,-2.1,0.9,0.78,0,0.26)),[K.hood,N,N,N,N,N]);
+ add(geo('lo',()=>crGeo(-1.95,1.85,0.6,0,-0.36,-2.25,2.3,0.86,0,0)),Gr);
+ // cabin set back, raked windscreen
+ add(geo('cab',()=>crGeo(-1.35,0.55,0.72,0,0.26,-1.0,-0.1,0.55,0,0.6)),[K.glassF,N,N,N,K.glassS,K.glassS]);
+ // armour skirts (livery on the outer face), swept tail fins, an antenna
+ [1,-1].forEach(s=>{add(geo('sk'+s,()=>{const g=crGeo(-1.75,1.55,0.035,0.9*s,-0.3,-1.95,1.8,0.035,0.865*s,0.13);if(s<0){const u=g.attributes.uv;for(let i=20;i<24;i++)u.setX(i,1-u.getX(i));}return g;}),s>0?[Gr,Gr,N,Gr,K.livery,Gr]:[Gr,Gr,N,Gr,Gr,K.livery]);
+  add(geo('fin'+s,()=>crGeo(-2.2,-1.75,0.03,0.6*s,0.22,-2.38,-2.12,0.025,0.64*s,0.5)),N);});
+ add(box('ant',0.02,0.42,0.02),Gr,-1.62,0.46,-0.42);
+ // lights: headlight strip along the nose edge, tail strip, roof bar, corner strobes
+ add(box('hd',0.1,0.035,1.26),K.head,2.2,0.02,0,-0.18);
+ add(box('tl',0.06,0.06,1.2),K.tail,-2.19,0.14,0);
+ add(box('bar',0.95,0.05,0.42),Gr,-0.55,0.62,0);
+ const red=new THREE.MeshBasicMaterial({color:0x4a1219}),blue=new THREE.MeshBasicMaterial({color:0x10204e});
+ add(box('lb',0.4,0.08,0.34),red,-0.78,0.68,0);add(box('lb',0.4,0.08,0.34),blue,-0.32,0.68,0);
+ [1,-1].forEach(s=>{add(box('cs',0.14,0.05,0.05),blue,1.72,0.16,0.87*s);add(box('cs',0.14,0.05,0.05),red,-1.9,0.16,0.87*s);});
+ // nose searchlight turret under the chin
+ add(geo('tur',()=>new THREE.CylinderGeometry(0.11,0.13,0.13,6)),[Gr,Gr,K.lens],1.15,-0.42,0);
+ // four ducted lift pods: plated barrel, a metal lip, a glowing fan face and a wash of light below
+ const fanM=new THREE.MeshBasicMaterial({map:K.fan,color:0x2a7080});
+ const jetM=new THREE.MeshBasicMaterial({map:K.jet,color:0x9fe8ff,transparent:true,opacity:0.3,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
+ const pod=geo('pod',()=>new THREE.CylinderGeometry(0.27,0.3,0.3,8)),lip=geo('lip',()=>new THREE.CylinderGeometry(0.33,0.33,0.08,8,1,true)),
+  cone=geo('jet',()=>{const c=new THREE.CylinderGeometry(0.22,0.4,1,8,1,true);c.translate(0,-0.5,0);return c;});
+ const jets=[],jetH=[];
+ [[1.48,1],[1.48,-1],[-1.48,1],[-1.48,-1]].forEach(([x,s])=>{const z=0.72*s;add(pod,[Gr,Gr,fanM],x,-0.5,z);add(lip,K.metal,x,-0.62,z);
+  const j=add(cone,jetM,x,-0.66,z);j.renderOrder=5;jets.push(j);const h=halo(0x9fe0ff,1,0.45,0.3);h.position.set(x,-0.74,z);group.add(h);jetH.push(h);});
+ // halos: bar halves, headlights, tail
+ const rH=halo(0xff2a3a,1.9,1.0,0),bH=halo(0x3a8bff,1.9,1.0,0);rH.position.set(-0.8,0.74,0);bH.position.set(-0.3,0.74,0);group.add(rH,bH);
+ const hH=halo(0xfff2d0,1.7,0.55,0.55);hH.position.set(2.42,0.02,0);const tH=halo(0xff2a3a,1.1,0.45,0.5);tH.position.set(-2.32,0.14,0);group.add(hH,tH);
+ const cLo=new THREE.Color(0x0e2a33),cHi=new THREE.Color(0xd6fbff);
+ function setThrust(k){k=Math.max(0,Math.min(1,k||0));fanM.color.copy(cLo).lerp(cHi,0.25+0.75*k);
+  jetM.opacity=0.05+0.36*k*k;jets.forEach(j=>j.scale.set(1,0.5+0.9*k,1));
+  jetH.forEach(h=>{h.material.opacity=0.12+0.6*k;h.scale.set(0.8+0.6*k,0.38+0.2*k,1);});}
+ function setLights(rOn,bOn){red.color.setHex(rOn?0xff6c78:0x4a1219);blue.color.setHex(bOn?0x5098ff:0x10204e);
+  rH.material.opacity=rOn?0.95:0;bH.material.opacity=bOn?0.95:0;}
+ setThrust(0.4);setLights(false,false);
+ return {group,setLights,setThrust};}
 // ---------- patrol flyby ----------
-// An original low-flying police cruiser. It sweeps in, hangs over the walkway with its searchlight locked on him, then peels off.
-function cruiserCanvas(bar){const [c,g]=cv(64,20);
- const navy='#1d2738',navyD='#121822',navyL='#2c3a52',white='#d6dde2';
- // roof light bar: red half and blue half alternate
- px(g,'#0c0f14',21,1,17,2);px(g,bar===0?'#ff3344':'#5a1a22',22,1,7,1);px(g,bar===1?'#3a8bff':'#14244e',30,1,7,1);px(g,bar===0?'#ffd0d4':'#3a1418',23,0,4,1);px(g,bar===1?'#d6e8ff':'#101a36',31,0,4,1);
- // canopy
- px(g,navyD,18,3,26,1);px(g,'#26414c',20,4,22,2);px(g,'#3f6f7c',21,4,6,1);px(g,'#5d98a6',22,4,2,1);
- // hull
- px(g,navy,4,6,56,6);px(g,navyL,6,6,50,1);px(g,navy,60,7,2,4);px(g,navyD,62,8,1,2);
- px(g,white,18,8,26,3);for(let x=20;x<42;x+=5){px(g,navy,x,9,3,1);px(g,navy,x+1,8,1,1);}
- px(g,'#9aa7b4',44,8,1,3);px(g,navyD,4,11,56,2);px(g,'#0a0d12',8,13,48,1);
- // lights
- px(g,'#fffbe8',61,8,2,1);px(g,'#ff2a3a',3,7,1,2);px(g,bar===0?'#ff3344':'#3a8bff',5,6,1,1);
- // thrusters
- px(g,'#6f8fa8',9,14,8,1);px(g,'#6f8fa8',46,14,8,1);px(g,'#cfeaff',10,15,6,1);px(g,'#cfeaff',47,15,6,1);px(g,'#7fc6ff',11,16,4,1);px(g,'#7fc6ff',48,16,4,1);
- return c;}
-const copTex=[0,1].map(b=>{const c=cruiserCanvas(b);return {R:texPix(c),L:texPix(flip(c))};});
-const COP={active:false,state:'off',x:0,y:6,z:-3,dir:1,v:0,t:0,next:9,aim:new V3(0,0,0.7),lock:0,strobe:0};
-const cop=new THREE.Group();cop.visible=false;scene.add(cop);
-const copSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:copTex[0].R,alphaTest:0.5,transparent:false}));copSprite.scale.set(64*0.075,20*0.075,1);cop.add(copSprite);
-const copHead=halo(0xfff2d0,2.2,1.1,0.6);cop.add(copHead);
-const copTail=halo(0xff2a3a,0.9,0.5,0.5);cop.add(copTail);
-const copRed=halo(0xff3344,2.6,1.6,0);cop.add(copRed);
-const copBlue=halo(0x3a8bff,2.6,1.6,0);cop.add(copBlue);
-const copJetA=halo(0x9fd8ff,1.3,0.7,0.5),copJetB=halo(0x9fd8ff,1.3,0.7,0.5);cop.add(copJetA);cop.add(copJetB);
-// searchlight: a unit-length cone stretched to the floor each frame, plus a real spotlight and a pool of light
+// The police cruiser (a 3D model: 07_cruiser_model.js) sweeps in, hangs over the walkway with its searchlight locked on him, then peels off.
+// It also flies the cut-scenes: in state 'scripted' the ride (24_ride.js) sets its x/y/z, yaw, pitch, bank, thrust and, with aimFree, the searchlight.
+const COP={active:false,state:'off',x:0,y:6,z:-3,dir:1,v:0,t:0,next:9,aim:new V3(0,0,0.7),lock:0,strobe:0,yaw:null,pitch:0,bank:0,thrust:0.5,aimFree:false,landed:false};
+const cop=new THREE.Group();cop.visible=false;cop.rotation.order='YZX';scene.add(cop);
+const copCar=buildCruiser();cop.add(copCar.group);
+const copRed=halo(0xff3344,2.6,1.6,0);copRed.position.set(-0.2,0.95,0);cop.add(copRed);
+const copBlue=halo(0x3a8bff,2.6,1.6,0);copBlue.position.set(-0.2,0.95,0);cop.add(copBlue);
+// searchlight: a unit-length cone stretched to its target each frame, plus a real spotlight and a pool of light
 const beam=new THREE.Mesh(shaftGeo(1,0.16,1.35),shaftMat(0xdcecff,0.8,0.02));beam.renderOrder=5;beam.visible=false;scene.add(beam);
 const copSpot=new THREE.SpotLight(0xe8f3ff,0,40,0.15,0.55,1.1);scene.add(copSpot);scene.add(copSpot.target);
 const copStrobe=new THREE.PointLight(0xff3344,0,16,2);scene.add(copStrobe);
 const copPool=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({map:glowTex,color:0xcfe4ff,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false}));copPool.rotation.x=-Math.PI/2;copPool.position.y=0.016;copPool.renderOrder=3;scene.add(copPool);
-const beamSrc=new V3(),beamDir=new V3();
-function callPatrol(){if(COP.active)return;if(LEVEL!=='street'){toast('No patrols in here.');return;}COP.dir=Math.random()<0.5?1:-1;COP.x=P.x-COP.dir*34;COP.y=R(4.4,5.0);COP.z=R(-2.1,-1.3);COP.v=COP.dir*11;COP.state='enter';COP.t=0;COP.lock=0;COP.active=true;cop.visible=true;beam.visible=true;
- COP.aim.set(P.x-COP.dir*6,0,0.7);copSprite.material.map=COP.dir>0?copTex[0].R:copTex[0].L;}
+const beamSrc=new V3(),beamDir=new V3(),copNose=new V3();
+function copShow(){COP.active=true;cop.visible=true;beam.visible=true;COP.yaw=null;COP.pitch=0;COP.bank=0;COP.aimFree=false;}
+function callPatrol(){if(COP.active)return;if(LEVEL!=='street'){toast('No patrols in here.');return;}COP.dir=Math.random()<0.5?1:-1;COP.x=P.x-COP.dir*34;COP.y=R(4.4,5.0);COP.z=R(-2.1,-1.3);COP.v=COP.dir*11;COP.state='enter';COP.t=0;COP.lock=0;COP.landed=false;copShow();
+ COP.aim.set(P.x-COP.dir*6,0,0.7);}
 // the ride home: the same cruiser, but this time it comes up out of the canyon for him, settles over the walkway and waits
-function callPickup(){COP.dir=1;COP.x=P.x-32;COP.y=6.2;COP.z=-1.25;COP.v=10;COP.state='pickup';COP.t=0;COP.lock=0;COP.landed=false;COP.tx=P.x+3.4;
- COP.active=true;cop.visible=true;beam.visible=true;copSprite.material.map=copTex[0].R;AUD.chirp(P.x);}
+function callPickup(){COP.dir=1;COP.x=P.x-32;COP.y=6.2;COP.z=-1.25;COP.v=10;COP.state='pickup';COP.t=0;COP.lock=0;COP.landed=false;COP.tx=P.x+3.4;copShow();AUD.chirp(P.x);}
 $('patrolBtn').addEventListener('click',()=>{callPatrol();$('patrolBtn').blur();});
 function tickPatrol(dt){if(LEVEL!=='street')return;
  if(!COP.active){COP.next-=dt;if(COP.next<=0)callPatrol();return;}
  COP.t+=dt;const rel=(P.x-COP.x)*COP.dir;// >0: player is still ahead of the car
  if(COP.state==='enter'){const sT=rel>8?11:Math.max(P.v*COP.dir+1,2.5);COP.v+=(COP.dir*sT-COP.v)*Math.min(1,dt*1.6);if(rel<1.5){COP.state='track';COP.t=0;}}
  else if(COP.state==='track'){const want=(P.x+COP.dir*1.4-COP.x)*1.8;COP.v+=(want-COP.v)*Math.min(1,dt*2.5);if(COP.t>4.4)COP.state='leave';}
- else if(COP.state==='scripted'){}// flown by the ride (23_cinema.js)
+ else if(COP.state==='scripted'){}// flown by the ride (24_ride.js)
  else if(COP.state==='pickup'){const dx=COP.tx-COP.x;COP.v+=(Math.max(-11,Math.min(11,dx*1.6))-COP.v)*Math.min(1,dt*1.8);const close=Math.abs(dx)<7;
   COP.y+=((close?1.4:6.2)-COP.y)*Math.min(1,dt*(close?1.1:0.5));if(!COP.landed&&Math.abs(dx)<0.4&&COP.y<1.6){COP.landed=true;AUD.chirp(COP.x);padRumble(0.4,0.6,300);}}
- else{COP.v+=(COP.dir*16-COP.v)*Math.min(1,dt*0.9);COP.lock=Math.max(0,COP.lock-dt*0.8);}
- COP.x+=COP.v*dt;
- const bob=Math.sin(t*1.7)*(COP.landed?0.04:0.12);cop.position.set(COP.x,COP.y+bob,COP.z);
- copSprite.material.rotation=(COP.state==='leave'?-0.05:COP.state==='enter'?0.03:Math.sin(t*1.1)*0.02)*COP.dir;
- const f=COP.dir;copHead.position.set(f*2.35,0.02,0.05);copTail.position.set(-f*2.35,0.05,0.05);copRed.position.set(f*-0.25,0.68,0.05);copBlue.position.set(f*0.35,0.68,0.05);
- copJetA.position.set(-f*1.3,-0.62,0);copJetB.position.set(f*1.3,-0.62,0);
+ else{COP.v+=(COP.dir*16-COP.v)*Math.min(1,dt*0.9);COP.lock=Math.max(0,COP.lock-dt*0.8);COP.y+=dt*(COP.y<9?1.2:0);}// peeling off: away and up
+ const scripted=COP.state==='scripted';if(!scripted)COP.x+=COP.v*dt;
+ const bob=scripted?0:Math.sin(t*1.7)*(COP.landed?0.04:0.12);cop.position.set(COP.x,COP.y+bob,COP.z);
+ // attitude: nose into the direction of travel, dip the nose when it guns it, sway a little when hovering
+ const yaw=COP.yaw!=null?COP.yaw:(COP.dir>0?0:Math.PI);
+ const pitch=scripted?COP.pitch:(COP.state==='leave'?-0.08:COP.state==='enter'?0.04:0)+Math.sin(t*1.1)*0.015;
+ const bank=scripted?COP.bank:Math.sin(t*0.8)*0.03-(COP.state==='leave'?0.06:0);
+ cop.rotation.set(bank,yaw,pitch);
+ copCar.setThrust(scripted?COP.thrust:COP.landed?0.35:COP.state==='leave'?1:COP.y>3?0.55:0.45);
  // strobe: double-flash red, then double-flash blue
  COP.strobe+=dt;const ph=(COP.strobe%0.9)/0.9;const red=(ph<0.08||(ph>0.16&&ph<0.24)),blue=(ph>0.5&&ph<0.58)||(ph>0.66&&ph<0.74);
- copRed.material.opacity=red?0.95:0.08;copBlue.material.opacity=blue?0.95:0.08;copSprite.material.map=(blue?copTex[1]:copTex[0])[f>0?'R':'L'];
- copStrobe.position.set(COP.x,COP.y+0.6,COP.z+0.5);copStrobe.color.setHex(blue?0x3a8bff:0xff3344);copStrobe.intensity=(red||blue)?5.5:0;
- // searchlight: hunts first, then locks on and trails him with a little lag
- if(COP.state!=='leave')COP.lock=Math.min(1,COP.lock+dt*(Math.abs(P.x-COP.x)<14?0.9:0.2));
- const hunt=new V3(COP.x+f*5+Math.sin(t*1.3)*2.5,0,0.7+Math.sin(t*0.9)*1.4);
- const target=hunt.lerp(new V3(P.x+P.v*0.12,0,0.7),COP.lock);
- COP.aim.lerp(target,Math.min(1,dt*(1.5+COP.lock*2.5)));
- beamSrc.set(COP.x+f*1.1,COP.y+bob-0.55,COP.z+0.3);
+ copCar.setLights(red,blue);copRed.material.opacity=red?0.95:0.06;copBlue.material.opacity=blue?0.95:0.06;
+ copStrobe.position.set(COP.x,COP.y+0.8,COP.z+0.5);copStrobe.color.setHex(blue?0x3a8bff:0xff3344);copStrobe.intensity=(red||blue)?5.5:0;
+ // searchlight: hunts first, then locks on and trails him with a little lag (cut-scenes aim it themselves)
+ copNose.set(Math.cos(yaw),0,-Math.sin(yaw));
+ if(!COP.aimFree){if(COP.state!=='leave')COP.lock=Math.min(1,COP.lock+dt*(Math.abs(P.x-COP.x)<14?0.9:0.2));
+  const f=Math.sign(copNose.x)||1;const hunt=new V3(COP.x+f*5+Math.sin(t*1.3)*2.5,0,0.7+Math.sin(t*0.9)*1.4);
+  const target=hunt.lerp(new V3(P.x+P.v*0.12,0,0.7),COP.lock);COP.aim.lerp(target,Math.min(1,dt*(1.5+COP.lock*2.5)));}
+ beamSrc.set(COP.x+copNose.x*1.6,COP.y+bob-0.45,COP.z+copNose.z*1.6+0.2);
  beamDir.copy(COP.aim).sub(beamSrc);const len=beamDir.length();beam.position.copy(beamSrc);beam.scale.set(1,len,1);beam.quaternion.setFromUnitVectors(DOWN,beamDir.normalize());
  const vis=Math.min(1,COP.t*2)*(COP.state==='leave'?Math.max(0,1-(Math.abs(COP.x-P.x)-6)/20):1);
  beam.material.uniforms.intensity.value=0.85*vis;copSpot.position.copy(beamSrc);copSpot.target.position.copy(COP.aim);copSpot.intensity=6.5*vis;
- copPool.position.set(COP.aim.x,0.016,COP.aim.z);copPool.scale.set(3.2,2.2,1);copPool.material.opacity=0.45*vis;
+ copPool.position.set(COP.aim.x,COP.aim.y+0.016,COP.aim.z);copPool.scale.set(3.2,2.2,1);copPool.material.opacity=COP.aim.y<0.5&&COP.aim.y>-0.5?0.45*vis:0;
  // downwash: rain and spray kicked off the walkway under the car when it hangs low over him
- if(Math.abs(COP.x-P.x)<5&&Math.random()<dt*14)spray(COP.x+R(-1.5,1.5),0.04,R(-1.5,1.8),R(-1.2,1.2),R(0.4,1.2),R(-0.4,0.4));
+ if(COP.y<3&&Math.abs(COP.x-P.x)<5&&Math.random()<dt*14)spray(COP.x+R(-1.5,1.5),0.04,R(-1.5,1.8),R(-1.2,1.2),R(0.4,1.2),R(-0.4,0.4));
  if(Math.abs(COP.x-camera.position.x)>48&&COP.state==='leave'){COP.active=false;COP.state='off';cop.visible=false;beam.visible=false;copSpot.intensity=0;copStrobe.intensity=0;copPool.material.opacity=0;COP.next=R(24,42);}}
 // tint the walker with the searchlight and strobes
 const spotCol=new THREE.Color(0.75,0.85,1.0);
@@ -2091,6 +2167,8 @@ click(t,x,1500,0.18,0.03);
   const ks=screamKeys();for(let i=0;i<Math.round(4*k);i++)if(ks.length)playBuf(SB[ks[Math.floor(Math.random()*ks.length)]],x+(Math.random()-0.5)*16,0.45*k,0.93+Math.random()*0.14,t+Math.random()*0.5);return;}
   const g=G(0,sfxBus);g.connect(G(0.5,sfxRev));g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.14*k,t+0.12);g.gain.exponentialRampToValueAtTime(0.0001,t+2.4);noise(t,2.5,F('bandpass',1300,0.7,g));
   for(let i=0;i<Math.round(10*k);i++)synthScream(t+Math.random()*0.5,x+(Math.random()-0.5)*18,k);}
+ // a revolver twirled on a finger: a short airy whoosh
+ function swish(x,k){if(!ok())return;const t=now(),g=G(1,panTo(x,sfxBus));env(g,t,0.02,0.05*(k||1),0.12);const f=F('bandpass',1800,1.4,g);f.frequency.setValueAtTime(900,t);f.frequency.exponentialRampToValueAtTime(3200,t+0.08);f.frequency.exponentialRampToValueAtTime(1400,t+0.16);noise(t,0.2,f);}
  function setMuted(m){muted=m;try{localStorage.setItem('skywalk-muted',m?'1':'0');}catch(e){}if(started)master.gain.setTargetAtTime(m?0:0.9*VOL.master,now(),0.05);}
  function setVolume(k,v){if(!(k in VOL))return;VOL[k]=Math.max(0,Math.min(1.5,v));try{localStorage.setItem('skywalk-volume',JSON.stringify(VOL));}catch(e){}
   if(!started)return;const t=now(),T=(g,x)=>g.gain.setTargetAtTime(x,t,0.04);
@@ -2102,7 +2180,7 @@ click(t,x,1500,0.18,0.03);
  function pause(p){if(!started)return;if(p)ctx.suspend();else ctx.resume();}
  // the club lights follow the audio clock once sound is running, so the beat on screen and in your ears stay locked together
  function clubTime(fallback){return (ok()&&songBuf)?(((now()-songStart)%songBuf.duration)+0.08):fallback;}
- return {setVolume,get volumes(){return Object.assign({},VOL);},scream,panic,voice,stopVoice,sableHit,powerDown,bodyFall,casing,cheer,bump,start,tick,setLevel,setSkid,step,jump,land,cut,shot,dry,draw,cylOpen,eject,insert,close,impact,chirp,ui,door,drink,setMuted,pause,clubTime,get muted(){return muted;},get started(){return started;}};})();
+ return {swish,setVolume,get volumes(){return Object.assign({},VOL);},scream,panic,voice,stopVoice,sableHit,powerDown,bodyFall,casing,cheer,bump,start,tick,setLevel,setSkid,step,jump,land,cut,shot,dry,draw,cylOpen,eject,insert,close,impact,chirp,ui,door,drink,setMuted,pause,clubTime,get muted(){return muted;},get started(){return started;}};})();
 // sound starts on the first key press or tap (browsers require a gesture)
 ['pointerdown','keydown','touchstart'].forEach(ev=>addEventListener(ev,()=>AUD.start(),{capture:true,passive:true}));
 const soundBtn=$('soundBtn');
@@ -2870,8 +2948,10 @@ function aptSetTerminal(state){aTerm=state==='read'?'read':'alert';drawTerm();}
 // ---------- the table where the revolver lies ----------
 aPlane(art(18,26,(g)=>{box(g,'#3a2c24',0,6,18,2,'#5a4436','#22180f');px(g,'#1e1612',2,8,2,18);px(g,'#1e1612',14,8,2,18);px(g,'#2a1e18',2,18,14,1);px(g,'#4a2a2a',5,15,3,3);px(g,'#2a3a4a',8,16,4,2);
  px(g,'#5a6a7a',1,2,3,4);px(g,'#8a9aaa',1,2,3,1);px(g,'#3a2a1a',1,4,3,2);box(g,'#5a4a2a',12,3,5,3,'#7a6a4a');px(g,'#c8a050',13,4,1,1);px(g,'#c8a050',15,4,1,1);}),0.5,0,-0.66);
-const aptGunProp=(()=>{const [c,g]=cv(16,12);drawGun(g,[4,5],0,{slide:0,cyl:0,open:false,loaded:6});const s=new THREE.Sprite(new THREE.SpriteMaterial({map:texPix(c),alphaTest:0.5,transparent:false}));
- s.center.set(0.5,0);s.scale.set(16*PIX,12*PIX,1);s.position.set(APT.gun,0.635,-0.6);apt.add(s);return s;})();
+const GUN_FLAT=0.45;// how flat the revolver on the table looks: its profile squashed, as if seen lying down from just above
+const aptGunProp=(()=>{const [c,g]=cv(16,12);drawGun(g,[4,5],0,{slide:0,cyl:0,open:false,loaded:6,sy:GUN_FLAT});
+ let low=0;const d=g.getImageData(0,0,16,12).data;for(let i=3;i<d.length;i+=4)if(d[i]>128)low=Math.max(low,Math.floor((i>>2)/16));const s=new THREE.Sprite(new THREE.SpriteMaterial({map:texPix(c),alphaTest:0.5,transparent:false}));
+ s.center.set(0.5,0);s.scale.set(16*PIX,12*PIX,1);s.position.set(APT.gun,0.8-(11-low)*PIX,-0.6);/* lowest pixel row on the table top (0.80 m) */apt.add(s);return s;})();
 function aptSetGun(taken){aptGunProp.visible=!taken;}
 
 // ---------- the window: the city, rain on the glass, half-drawn blinds ----------
@@ -2990,7 +3070,7 @@ addEventListener('keydown',e=>{const k=e.key;
   if(k!=='h'&&k!=='H'&&k!=='m'&&k!=='M'&&k!=='?')e.stopImmediatePropagation();}},true);
 
 // ---------- the map ----------
-const PLACES=[{x:DOOR_X,name:'The Low Tide',key:'club'},{x:SX,name:'Teo’s noodles'},{x:SHOP_X,name:'SABLE’s old shutter'},{x:APT_STREET_X,name:'Your building',key:'apt'}];
+const PLACES=[{x:DOOR_X,name:'The Low Tide',key:'club'},{x:SX,name:'Teo\u2019s noodles'},{x:SHOP_X,name:'SABLE\u2019s old shutter'}];
 function toggleMap(open){if(open==null)open=mapEl.hidden;if(open&&(!STORY.started||STORY.ended))return;mapEl.hidden=!open;lockInput=open;$('mapBtn').setAttribute('aria-expanded',String(open));
  if(!open)return;AUD.ui();const strip=$('mapStrip'),o=objectiveNow(),pct=x=>((x+34)/68*100).toFixed(1)+'%';
  const goalKey=o?(o.lvl==='club'?'club':o.lvl==='apt'?'apt':null):null,goalX=o&&o.lvl==='street'?o.x:null;
@@ -2998,9 +3078,8 @@ function toggleMap(open){if(open==null)open=mapEl.hidden;if(open&&(!STORY.starte
  PLACES.forEach(pl=>{const d=document.createElement('div');d.className='place';d.style.left=pct(pl.x);
   if((goalKey&&pl.key===goalKey)||(goalX!=null&&Math.abs(goalX-pl.x)<2))d.classList.add('goal');
   const n=document.createElement('span');n.textContent=pl.name;const i=document.createElement('i');d.append(n,i);strip.appendChild(d);});
- const youX=LEVEL==='club'?DOOR_X:LEVEL==='apt'?APT_STREET_X:P.x;const you=document.createElement('div');you.className='you';you.style.left=pct(youX);
- you.textContent=LEVEL==='club'?'You (inside)':LEVEL==='apt'?'You (home)':'You';strip.appendChild(you);
- $('mapObj').textContent=o?'Objective: '+o.text:'';}
+ if(LEVEL!=='apt'){const youX=LEVEL==='club'?DOOR_X:P.x;const you=document.createElement('div');you.className='you';you.style.left=pct(youX);you.textContent=LEVEL==='club'?'You (inside)':'You';strip.appendChild(you);}
+ $('mapObj').textContent=(LEVEL==='apt'?'You\u2019re home, across the canyon. A car will take you over. ':'')+(o?'Objective: '+o.text:'');}
 $('mapBtn').addEventListener('click',()=>{toggleMap();$('mapBtn').blur();});
 
 // ---------- objectives, and a marker at the screen edge pointing to the next place ----------
@@ -3036,7 +3115,6 @@ spots.push({lvl:'apt',x:APT.door,r:1.1,label:'Head out',armed:'Head out',short:'
  if(!STORY.read){toast('Check the terminal first. Dispatch doesn’t blink for nothing.');return;}
  if(!STORY.hasGun){toast('Not without your revolver.');return;}startTransit('street');}});
 // ---------- the street ----------
-spots.push({lvl:'street',x:APT_STREET_X,r:1.2,label:'Go up to your apartment',armed:'Holster and go up to your apartment',short:'Home',act:()=>startTransit('apt')});
 spots.push({lvl:'street',x:SHOP_X-0.8,r:0.9,label:'Look at the sigil',armed:'Look at the sigil',short:'Look',act:()=>openDialog('sigil')});
 // the ride: an interaction that follows the car once it has settled
 const carSpot={lvl:'street',x:0,r:0,label:'Get in the car',armed:'Holster and get in the car',short:'Get in',act:()=>endGame()};spots.push(carSpot);
@@ -3080,7 +3158,7 @@ function skipIntro(){titleEl.hidden=true;cardsEl.hidden=true;document.body.class
 // A shot pulls the follow camera (camPos/camLook in update) toward its own framing, eased in and out, with letterbox bars.
 // lock:true shots freeze him and hide the HUD for their length; soft shots (the dispatch, talking to SABLE) only reframe.
 // A shot ends after dur seconds, or when its until() says so. With reduced motion, shots cut straight to their final framing.
-const CINE={shot:null,t:0,w:0,seen:{},prevLevel:null,auto:true};// auto: the story beats trigger their shots (skipIntro turns it off for tests)
+const CINE={shot:null,t:0,w:0,seen:{},prevLevel:null,auto:true,k:null};// k: how hard the camera chases its target (fast flight needs more)// auto: the story beats trigger their shots (skipIntro turns it off for tests)
 const cineP=new V3(),cineL=new V3(),baseFov=()=>camera.aspect<1?50:38;
 function cine(def){CINE.shot=Object.assign({dur:4,ease:0.9,lock:false,fov:0},def);CINE.t=0;CINE.w=reduce?1:CINE.w;
  if(CINE.shot.lock){lockInput=true;}document.body.classList.add('bars');}
@@ -3103,7 +3181,12 @@ function shotWake(){cine({lock:true,dur:5.2,ease:1.2,fov:-4,frame:(u,p,l)=>{p.se
 // reading the dispatch: over his shoulder, close on the screen
 function shotTerminal(){cine({until:()=>!dlgOpen,ease:0.7,fov:-6,frame:(u,p,l)=>{p.set(APT.terminal+0.55,1.55,3.0);l.set(APT.terminal-0.15,1.15,-2.4);}});}
 // the revolver: a close side shot of his hands and the table
-function shotGun(){cine({lock:true,dur:PICK.dur+0.3,ease:0.6,fov:-6,frame:(u,p,l)=>{p.set(APT.gun+mix(1.1,0.75,u),mix(1.45,1.35,u),mix(4.6,4.0,u));l.set(APT.gun,1.2,-0.4);}});}
+// keyframes by pickup time: [t, x offset, y, z, look x offset, look y]. Wide on the walk up, close on the grab and the cylinder, back out a
+// little so the whole twirl is in frame, then wider still as he steps back toward the follow camera.
+const GUNCAM=[[0,1.1,1.4,3.9,0.5,1.15],[1.0,0.7,1.2,3.1,0.3,0.95],[1.7,0.6,1.18,2.85,0.28,1.0],[2.4,0.5,1.3,2.75,0.2,1.18],[3.5,0.5,1.3,2.8,0.2,1.15],
+ [3.95,0.55,1.25,3.3,0.25,1.1],[5.3,0.45,1.22,3.4,0.15,1.05],[6.3,0.3,1.25,3.6,0.1,1.1],[7.4,0.0,1.3,4.6,0.4,1.2]];
+function shotGun(){cine({lock:true,dur:PICK.dur+0.2,ease:0.7,fov:-5,frame:(u,p,l)=>{const T=PICK.on?PICK.t:PICK.dur+0.2;let i=0;while(i<GUNCAM.length-2&&T>GUNCAM[i+1][0])i++;
+ const A=GUNCAM[i],B=GUNCAM[i+1],k=pSm(pSeg(T,A[0],B[0])),m=j=>A[j]+(B[j]-A[j])*k;p.set(PICK.stand+m(1),m(2),m(3));l.set(PICK.stand+m(4),m(5),-0.62);}});}
 // first time out: high over the canyon, craning down onto the skywalk as he steps out of his building
 function shotStreet(){cine({lock:true,dur:4.6,ease:1.1,frame:(u,p,l)=>{p.set(mix(APT_STREET_X-9,P.x-1.6,u),mix(9,1.2,u),mix(16,9.4,u));l.set(mix(APT_STREET_X-16,P.x-1,u),mix(4.5,1.6,u),mix(-14,-1.6,u));}});}
 // first time in the Low Tide: a slow sweep across the dance floor to the pale figure preaching in the far corner, then back to him
@@ -3119,73 +3202,162 @@ function shotPickup(){cine({lock:true,until:()=>COP.landed&&CINE.t>2,travel:3.5,
 function shotAway(){cine({lock:true,dur:3,ease:0.5,frame:(u,p,l)=>{p.set(P.x-0.5,mix(1.5,7,u),mix(9.5,13,u));l.set(P.x+1,mix(1.4,0.6,u),-1.2);}});}
 
 // ---------- picking up the revolver for the first time ----------
-// keyframes on the shared rig: reach down to the table, take it, bring it up, swing the cylinder out, spin it, snap it shut, holster it
-const PICK={on:false,t:0,dur:4.2,cue:0,done:null};
-const PICKK=[[0,{l:5,h:0.6,na:-3,ne:12,fa:2,fe:14,g:0,ga:0,op:0}],
- [0.13,{l:26,h:1.5,na:58,ne:-6,fa:18,fe:30,g:0,ga:-30,op:0}],// reaching for the table
- [0.2,{l:28,h:1.6,na:62,ne:-8,fa:20,fe:30,g:1,ga:-30,op:0}],// fingers close on the grip
- [0.34,{l:6,h:0.8,na:34,ne:96,fa:42,fe:72,g:1,ga:34,op:0}],// up to the chest
- [0.42,{l:6,h:1.0,na:34,ne:96,fa:44,fe:76,g:1,ga:34,op:1}],// cylinder out
- [0.6,{l:6,h:1.1,na:36,ne:98,fa:40,fe:82,g:1,ga:30,op:1}],// thumb spins it
- [0.7,{l:5,h:0.8,na:30,ne:70,fa:30,fe:60,g:1,ga:6,op:0}],// snapped shut
- [0.82,{l:4,h:0.6,na:4,ne:62,fa:6,fe:20,g:1,ga:58,op:0}],// down to the hip
- [0.9,{l:5,h:0.6,na:-14,ne:24,fa:4,fe:16,g:0,ga:58,op:0}],// holstered
- [1,{l:5,h:0.6,na:-3,ne:12,fa:2,fe:14,g:0,ga:0,op:0}]];
+// A choreographed close-up on the shared rig, drawn live every frame so every joint moves smoothly. He walks up to the table and into
+// its depth (so he and the revolver are the same distance from the camera and line up exactly), looks down, reaches with 2-bone IK onto
+// the grip, and takes it from the table at the very pixel and angle it was lying at. He lifts it to his chest, flicks the cylinder out,
+// spins it with his other palm and snaps it shut with a flick of the wrist; then twirls it twice on his trigger finger, drops it barrel-
+// first into the holster, rests his hand on the butt, and steps back out. Times below are in seconds.
 const pickC=document.createElement('canvas');pickC.width=FW;pickC.height=FH;const pickG=pickC.getContext('2d');const pickTex=texPix(pickC);
-function pickKey(u){for(let i=0;i<PICKK.length-1;i++){const [a,A]=PICKK[i],[b,B]=PICKK[i+1];if(u>=a&&u<=b){const k=ease((u-a)/(b-a)),o={};for(const n in A)o[n]=(n==='g'||n==='op')?A[n]:A[n]+(B[n]-A[n])*k;return o;}}return PICKK[PICKK.length-1][1];}
-function startPickup(done){PICK.on=true;PICK.t=0;PICK.cue=0;PICK.done=done;P.v=0;P.face=1;lockInput=true;shotGun();}
-function tickPickup(dt){if(!PICK.on)return;PICK.t+=dt;const u=Math.min(1,PICK.t/PICK.dur);
- P.x+=((APT.gun+0.2)-P.x)*Math.min(1,dt*6);// stand so his hand meets the table from the shot's angleP.v=0;P.face=1;
- // sounds and the prop on cue
- const cues=[[0.2,()=>{aptSetGun(true);AUD.draw(P.x,false);padRumble(0.2,0.3,80);}],[0.42,()=>AUD.cylOpen(P.x)],[0.48,()=>AUD.insert(P.x)],[0.53,()=>AUD.insert(P.x)],[0.58,()=>AUD.insert(P.x)],[0.68,()=>{AUD.close(P.x);padRumble(0.3,0.2,90);}],[0.86,()=>AUD.draw(P.x,true)]];
- while(PICK.cue<cues.length&&u>=cues[PICK.cue][0]){cues[PICK.cue][1]();PICK.cue++;}
- if(u>=1){PICK.on=false;if(!storyMenu()&&!STORY.ended)lockInput=false;const d=PICK.done;PICK.done=null;if(d)d();}}
-// the live frame for the pickup (used instead of the normal sprite while it plays)
-function heroOverride(){if(!PICK.on)return null;const u=Math.min(1,PICK.t/PICK.dur),K=pickKey(u);const Q=JSON.parse(JSON.stringify(idlePose(0)));
- Q.lean=K.l;Q.headFwd=K.h;Q.armN={a:K.na,e:K.ne};Q.armF={a:K.fa,e:K.fe};Q.lookUp=false;
- if(K.g)Q.gun={slide:0,cyl:(u>0.46&&u<0.62)?Math.floor(u*60):0,open:!!K.op,loaded:6,ang:K.ga};
- const c=drawFigure(Q,rootFor(Q,'any'));pickG.clearRect(0,0,FW,FH);pickG.drawImage(c,0,0);pickTex.needsUpdate=true;pickTex.userData.meta=c.meta||null;return pickTex;}
-
-// ---------- the ride in: a cruiser picks him up outside his building and flies him down the skywalk to the Low Tide ----------
-// phases: arrive (the car comes down in front of his door) → board (he walks to it and gets in) → lift → fly (west, low over the walk,
-// searchlight sweeping) → land (near the club) → out (he steps out) → away (the car peels off). Esc / Enter / E / A / B / Start skip it.
-const RIDE={on:false,phase:'',t:0,carX:0,dropX:DOOR_X+8};
-function startRide(){RIDE.on=true;RIDE.phase='arrive';RIDE.t=0;RIDE.carX=APT_STREET_X-3.8;lockInput=true;document.body.classList.add('riding');
- COP.active=true;COP.state='scripted';COP.dir=-1;COP.x=APT_STREET_X+26;COP.y=7;COP.z=-1.25;COP.v=0;COP.lock=0;COP.landed=false;cop.visible=true;beam.visible=true;copSprite.material.map=copTex[0].L;AUD.chirp(P.x);
- cine({lock:true,until:()=>!RIDE.on,ease:1,frame:rideFrame});}
-// the camera: a wide two-shot at the kerb, then tracking alongside the car in flight, then on him at the drop-off
-function rideFrame(u,p,l){const ph=RIDE.phase;
- if(ph==='arrive'||ph==='board'){p.set(P.x-1.6,1.5,10.6);l.set((P.x+COP.x)/2,mix(COP.y,1.4,0.5),-1.4);}
- else if(ph==='lift'||ph==='fly'){p.set(COP.x+3.6,COP.y+0.9,10.4);l.set(COP.x-1.8,COP.y-0.8,-1.6);}
- else{p.set(P.x+1.8,1.45,10);l.set(P.x-2.4,1.35,-1.4);}}
-function tickRide(dt){if(!RIDE.on)return;RIDE.t+=dt;const ph=RIDE.phase,T=RIDE.t;COP.lock=Math.min(COP.lock,0.35);
- const toward=(v,tg,k)=>v+(tg-v)*Math.min(1,dt*k);
- if(ph==='arrive'){COP.x=toward(COP.x,RIDE.carX,1.4);COP.y=toward(COP.y,1.45,Math.abs(COP.x-RIDE.carX)<5?1.6:0.5);
-  if(Math.abs(COP.x-RIDE.carX)<0.25&&COP.y<1.6&&T>2){RIDE.phase='board';RIDE.t=0;AUD.chirp(COP.x);padRumble(0.3,0.5,250);}}
- else if(ph==='board'){autoWalk=-1;if(P.x<=RIDE.carX+1.1||T>4){autoWalk=0;P.v=0;fig.visible=false;blob.visible=false;AUD.door();RIDE.phase='lift';RIDE.t=0;}}
- else if(ph==='lift'){COP.y=toward(COP.y,4.6,1.4);COP.x=toward(COP.x,RIDE.carX-1.5,1);P.x=COP.x;if(T>1.6){RIDE.phase='fly';RIDE.t=0;}}
- else if(ph==='fly'){const tx=RIDE.dropX+1.6;COP.x=toward(COP.x,tx,0.42);COP.y=4.6+Math.sin(T*0.9)*0.35;P.x=COP.x;
-  if(Math.abs(COP.x-tx)<1.2){RIDE.phase='land';RIDE.t=0;}}
- else if(ph==='land'){const tx=RIDE.dropX+1.6;COP.x=toward(COP.x,tx,1.2);COP.y=toward(COP.y,1.45,1.3);P.x=RIDE.dropX;
-  if(COP.y<1.6&&T>1.4){RIDE.phase='out';RIDE.t=0;AUD.door();padRumble(0.2,0.4,200);fig.visible=true;blob.visible=true;P.x=RIDE.dropX;P.face=-1;P.v=0;camInit=false;}}
- else if(ph==='out'){if(T>1.1){RIDE.phase='away';RIDE.t=0;COP.state='leave';COP.dir=1;COP.v=2;copSprite.material.map=copTex[0].R;}}
- else if(ph==='away'){if(T>1.4)rideEnd();}}
-function rideEnd(){if(!RIDE.on)return;RIDE.on=false;RIDE.phase='';autoWalk=0;document.body.classList.remove('riding');fig.visible=true;blob.visible=true;
- if(Math.abs(P.x-RIDE.dropX)>0.5||!fig.visible){P.x=RIDE.dropX;P.face=-1;}P.v=0;
- if(COP.state==='scripted'){COP.state='leave';COP.dir=1;COP.v=4;}if(!storyMenu()&&!STORY.ended)lockInput=false;}
-// skipping: straight to him standing near the club and the car leaving
-function rideSkip(){if(!RIDE.on)return;P.x=RIDE.dropX;P.face=-1;camInit=false;COP.x=RIDE.dropX+1.6;COP.y=2;rideEnd();}
+const PICK={on:false,t:0,dur:7.2,cue:0,done:null,x0:0,stand:0,face:1,ph:0,dz0:0};
+const PZ=(-0.6+0.02)-0.7;// his depth offset at the table: the revolver lies at z −0.6, he normally walks at z 0.7
+const propGrip=()=>[aptGunProp.position.x+(4.5-8)*PIX,aptGunProp.position.y+(12-5.5)*PIX];// where the hand closes, in world x/y
+// 2-bone IK for an arm of the rig: shoulder S to target T, in sprite pixels (y down; angles from straight down, toward +x). Elbow bends back.
+function armIK(S,T){const U=RIG.upper,F=RIG.fore,vx=T[0]-S[0],vy=T[1]-S[1];const d=Math.max(Math.abs(U-F)+0.05,Math.min(U+F-0.05,Math.hypot(vx,vy)));
+ const th=Math.atan2(vx,vy),al=Math.acos(Math.max(-1,Math.min(1,(U*U+d*d-F*F)/(2*U*d)))),a=th-al;const ex=S[0]+Math.sin(a)*U,ey=S[1]+Math.cos(a)*U;
+ return {a:a/D2R,e:(Math.atan2(T[0]-ex,T[1]-ey)-a)/D2R};}
+const pSeg=(t,a,b)=>Math.max(0,Math.min(1,(t-a)/(b-a))),pSm=u=>u*u*(3-2*u),pLerp=(a,b,u)=>a+(b-a)*u,pLp2=(A,B,u)=>[A[0]+(B[0]-A[0])*u,A[1]+(B[1]-A[1])*u];
+const pInOut=u=>u<0.5?4*u*u*u:1-Math.pow(-2*u+2,3)/2;
+// a point on the revolver (gun-art column/row) for a gun held at hand H with angle ang (degrees), in sprite pixels; mirrors drawGun's transform
+function gunPt(H,ang,col,row){const a=ang*D2R,u=col+0.5-GUN_O[0],v=row+0.5-GUN_O[1];return [H[0]+0.5+u*Math.cos(a)-v*Math.sin(a),H[1]+0.5+u*Math.sin(a)+v*Math.cos(a)];}
+function startPickup(done){PICK.on=true;PICK.t=0;PICK.cue=0;PICK.done=done;PICK.x0=P.x;PICK.ph=0;PICK.dz0=P.dz||0;
+ // stand where a slightly bent arm reaches the grip: the grip sits about 7 px in front of and 14 px below his shoulder
+ PICK.stand=propGrip()[0]-0.3;PICK.face=PICK.stand>=P.x-0.05?1:-1;P.v=0;lockInput=true;shotGun();}
+function tickPickup(dt){if(!PICK.on)return;const T0=PICK.t;PICK.t+=dt;const T=PICK.t;
+ // walking up to the table (and stepping back from it at the end): position, depth, and a walk cycle paced by the distance covered
+ const was=[P.x,P.dz||0];
+ if(T<=1.0){const u=pSm(pSeg(T,0,1.0));P.x=pLerp(PICK.x0,PICK.stand,u);P.dz=pLerp(PICK.dz0,PZ,u);P.face=Math.abs(PICK.stand-PICK.x0)>0.15&&T<0.85?PICK.face:1;}
+ else if(T>=6.4){const u=pSm(pSeg(T,6.4,7.2));P.x=PICK.stand;P.dz=pLerp(PZ,0,u);P.face=1;}
+ else{P.x=PICK.stand;P.dz=PZ;P.face=1;}
+ P.v=0;const moved=Math.hypot(P.x-was[0],(P.dz||0)-was[1]);const prev=PICK.ph%1;PICK.ph+=moved/GAIT.walk.stride;const b=PICK.ph%1;if(moved>0&&((prev<0.5&&b>=0.5)||b<prev))AUD.step('walk',P.x);
+ // sounds on cue
+ const cues=[[1.6,()=>{aptSetGun(true);AUD.draw(P.x,false);padRumble(0.25,0.35,90);}],[2.42,()=>AUD.cylOpen(P.x)],
+  [2.66,()=>AUD.insert(P.x)],[2.8,()=>AUD.insert(P.x)],[2.98,()=>AUD.insert(P.x)],[3.22,()=>AUD.insert(P.x)],[3.42,()=>{AUD.close(P.x);padRumble(0.35,0.2,90);}],
+  [4.1,()=>AUD.swish(P.x,0.7)],[4.42,()=>AUD.swish(P.x,1)],[4.74,()=>AUD.swish(P.x,1)],[5.04,()=>AUD.swish(P.x,0.8)],[5.6,()=>{AUD.draw(P.x,true);AUD.bump(false,P.x);padRumble(0.4,0.3,120);}]];
+ while(PICK.cue<cues.length&&T>=cues[PICK.cue][0]){cues[PICK.cue][1]();PICK.cue++;}
+ if(T>=PICK.dur){PICK.on=false;P.dz=0;P.face=1;if(!storyMenu()&&!STORY.ended)lockInput=false;const d=PICK.done;PICK.done=null;if(d)d();}}
+// the live frame (used instead of the normal sprite while it plays)
+function heroOverride(){if(!PICK.on)return null;const T=PICK.t;let Q,root;
+ if(T<0.95||T>6.45){// walking: the ordinary gait, with his hand easing toward or away from the holster
+  const p=((PICK.ph%1)+1)%1;Q=JSON.parse(JSON.stringify(gaitPose('walk',p)));root=stanceRoot('walk',p);
+  if(T>6.45){Q.armN={a:pLerp(-10,Q.armN.a,pSeg(T,6.45,7.0)),e:pLerp(24,Q.armN.e,pSeg(T,6.45,7.0))};}}
+ else{Q=JSON.parse(JSON.stringify(idlePose(0)));
+  // body: bend toward the table to reach, straighten to lift, a small sway through the twirl, settle after the holster
+  const reach=pSm(pSeg(T,0.95,1.5))*(1-pSm(pSeg(T,1.6,2.2))),tw=pSeg(T,3.95,5.25),sway=Math.sin(tw*Math.PI*4)*(1-Math.abs(2*tw-1));
+  Q.lean=5+20*reach+2*sway+2*pSm(pSeg(T,5.25,5.6))*(1-pSeg(T,5.6,6.2));Q.headFwd=0.6+1.0*reach+0.5*pSm(pSeg(T,2.2,2.5))*(1-pSm(pSeg(T,3.5,3.8)))-0.2*pSm(pSeg(T,5.7,6.2));
+  Q.shrug=0.6+0.4*reach;Q.near.t+=9*reach;Q.near.k+=12*reach;Q.far.t+=7*reach;Q.far.k+=10*reach;/* a hip hinge: knees forward, shins upright, hips back */Q.coat=4+3*sway+2*reach;Q.lookUp=false;}
+ root=root!=null?root:rootFor(Q,'any');const J=joints(Q,HIPX,root),S=J.sh,f=1;
+ const held=T>=1.6&&T<5.68,toPx=(wx,wy)=>[HIPX+0.5+(wx-P.x)*f/PIX-0.5,GROUND+1-wy/PIX-0.5];
+ if(T>=0.95&&T<=6.45){
+  // the near (gun) hand: rest → the grip on the table → an arc up to the chest → out in front at the waist (circling with the twirl) → the holster
+  const rest=[J.armN.hand[0],J.armN.hand[1]],g=propGrip(),grip=toPx(g[0],g[1]),chest=[S[0]+5.5,S[1]+5],out=[S[0]+8.6,S[1]+6.6],hol=[HIPX+1.4,root+1.2];
+  const tw=pSeg(T,3.95,5.25),spin=720*pInOut(tw);let H=rest;
+  if(T<1.6)H=pLp2(rest,grip,pSm(pSeg(T,1.0,1.6)));
+  else if(T<2.35){const u=pSm(pSeg(T,1.6,2.35));H=pLp2(grip,chest,u);H[1]-=2.2*Math.sin(Math.PI*u);}
+  else if(T<3.6)H=chest;
+  else if(T<3.95)H=pLp2(chest,out,pSm(pSeg(T,3.6,3.95)));
+  else if(T<5.25){const r=0.9*Math.sin(Math.PI*tw);H=[out[0]+r*Math.cos(spin*D2R),out[1]+r*Math.sin(spin*D2R)];}
+  else if(T<5.6)H=pLp2(out,hol,pSm(pSeg(T,5.25,5.6)));
+  else H=pLp2(hol,rest,pSm(pSeg(T,6.0,6.45)));
+  Q.armN=armIK(S,H);
+  // the revolver's angle: lying flat as it's taken, tilting up to look into the cylinder, a flick out, a snap shut, hanging for the twirl
+  let ang=0;if(T<2.35)ang=34*pSm(pSeg(T,1.6,2.35));
+  else if(T<3.35)ang=34+16*Math.sin(Math.PI*pSeg(T,2.35,2.6));
+  else if(T<3.6)ang=34-26*Math.pow(pSeg(T,3.35,3.47),0.5)+6*pSm(pSeg(T,3.47,3.6));
+  else if(T<3.95)ang=pLerp(14,90,pSm(pSeg(T,3.6,3.95)));
+  else ang=90+spin;
+  // the support hand: comes in to swing the cylinder out, sweeps across it three times to spin it, then lets go
+  const open=T>=2.45&&T<3.42;
+  if(T>=2.2&&T<3.55){const cyl=gunPt(H,ang,open?2:2,open?4.5:2),idle=[J.armF.hand[0],J.armF.hand[1]];
+   const sw=T>=2.6&&T<3.35?Math.sin(pSeg(T,2.6,3.35)*Math.PI*6)*1.8:0,a2=ang*D2R,tgt=[cyl[0]-Math.sin(a2)*sw,cyl[1]+Math.cos(a2)*sw];
+   const w=pSm(pSeg(T,2.2,2.42))*(1-pSm(pSeg(T,3.42,3.55)));Q.armF=armIK(S,pLp2(idle,tgt,w));}
+  const cylIdx=T>=2.6&&T<3.42?Math.floor(14*(1-Math.pow(1-pSeg(T,2.6,3.3),2))):0;
+  if(held)Q.gun={slide:0,cyl:cylIdx,open,loaded:6,ang,sy:pLerp(GUN_FLAT,1,pSm(pSeg(T,1.6,1.95)))};}// it turns up off the table: flat as it's taken, full profile by the chest
+ const c=drawFigure(Q,root);
+ // the twirl's smear: while it spins fast, two dithered ghosts trail the revolver (pale, then dim), and the gun is redrawn on top
+ if(held&&T>=3.95&&T<5.25){const tw=pSeg(T,3.95,5.25),v=720*(pInOut(Math.min(1,tw+0.01))-pInOut(Math.max(0,tw-0.01)))/0.02/1.3;// degrees per second
+  if(v>300){const hd=joints(Q,HIPX,root).armN.hand,[,gg]=cv(FW,FH),cx=c.getContext('2d');
+   [[0.036,'#4a525e'],[0.018,'#8a94a4']].forEach(([lag,col])=>{gg.clearRect(0,0,FW,FH);drawGun(gg,hd,Q.gun.ang-v*lag,Q.gun);const d=gg.getImageData(0,0,FW,FH).data;cx.fillStyle=col;
+    for(let y=0;y<FH;y++)for(let x=y&1;x<FW;x+=2)if(d[(y*FW+x)*4+3]>128)cx.fillRect(x,y,1,1);});
+   drawGun(cx,hd,Q.gun.ang,Q.gun);px(cx,PC.skin,Math.round(hd[0]),Math.round(hd[1]));}}
+ pickG.clearRect(0,0,FW,FH);
+ if(P.face>0)pickG.drawImage(c,0,0);else{pickG.save();pickG.translate(FW,0);pickG.scale(-1,1);pickG.drawImage(c,0,0);pickG.restore();}
+ pickTex.needsUpdate=true;pickTex.userData.meta=c.meta||null;return pickTex;}
 
 // ---------- which beats get a shot ----------
 function tickCinema(dt){tickPickup(dt);if(!STORY.started||STORY.ended&&!CINE.shot)return;
  tickRide(dt);
- const lv=LEVEL,from=CINE.prevLevel,changed=lv!==from&&!transit;if(changed)CINE.prevLevel=lv;
+ const lv=LEVEL,from=CINE.prevLevel;
+ if(CINE.auto&&lv==='street'&&from==='apt'&&STORY.hasGun&&!resolved()&&!RIDE.on){CINE.prevLevel=lv;if(CINE.shot)cineDone();startRide();return;}// leaving home on the job: the ride in (24_ride.js), starting behind the black of the door
+ const changed=lv!==from&&!transit;if(changed)CINE.prevLevel=lv;
  if(CINE.shot||!CINE.auto)return;
- if(changed&&lv==='street'&&from==='apt'&&STORY.hasGun&&!resolved())startRide();// leaving home on the job: the ride in
- else if(changed&&lv==='club'&&!CINE.seen.club){CINE.seen.club=1;shotClub();}
+ if(changed&&lv==='club'&&!CINE.seen.club){CINE.seen.club=1;shotClub();}
  else if(lv==='club'&&dlgOpen&&SAB.inDialog)shotTalk();
  else if(lv==='club'&&SAB.state==='dying'&&!CINE.seen.death){CINE.seen.death=1;shotDeath();}
  else if(lv==='street'&&COP.state==='pickup'&&!CINE.seen.pickup){CINE.seen.pickup=1;shotPickup();}}
+
+// ================= THE RIDE IN: from his tower across the canyon to the Low Tide =================
+// His apartment is in a tower on the near side of the canyon (HOME), facing the city. When he leaves, a police cruiser is waiting at the
+// landing pad outside his window. It lifts off and flies him across the gap, in toward the lights of the skywalk, and sets him down a few
+// metres from the Low Tide. Phases: pad (outside his tower: the car at the pad, its door shuts, it lifts) → fly (a chase camera along RIDE_PATH)
+// → land → out (he steps out) → away (the car peels off). Esc / Enter / E or A / B / Start skip it.
+const HOME={x:40,z:48,w:10,d:8,top:58,padY:30};HOME.face=HOME.z-HOME.d/2;// the face toward the city (−z)
+const RIDE={on:false,phase:'',t:0,dropX:DOOR_X+8,e:0,yawPrev:null};
+// his tower and its neighbours on this side of the canyon (behind the street camera, so only seen on the ride)
+[[HOME.x,HOME.z,HOME.w,HOME.d,HOME.top,1],[HOME.x-16,HOME.z+6,9,9,44,0],[HOME.x+15,HOME.z-2,8,7,70,2],[HOME.x-31,HOME.z-6,7,6,36,1],[HOME.x+2,HOME.z+22,12,9,90,0],
+ [HOME.x-9,HOME.z+40,10,10,64,2],[HOME.x+28,HOME.z+18,9,8,52,1],[HOME.x-46,HOME.z+14,8,8,72,0],[HOME.x+44,HOME.z+4,9,9,40,2]].forEach(a=>tower(...a));
+// his window from outside (lamp light through neon blinds), the hatch to the pad, and the pad itself with its edge lights and a slow beacon
+const homeBeacon=(()=>{const g=new THREE.Group();scene.add(g);const fx=HOME.x-0.8,fz=HOME.face;
+ const [wc,wg]=cv(24,16);px(wg,'#14101a',0,0,24,16);px(wg,'#ffb35c',2,2,20,12);for(let y=2;y<14;y+=2)px(wg,'#3a1a2a',2,y,20,1);px(wg,'#3fe6f0',14,3,7,1);px(wg,'#3fe6f0',14,7,7,1);px(wg,'#ff3d9a',3,11,5,1);px(wg,'#2a2532',0,0,24,2);px(wg,'#2a2532',0,14,24,2);px(wg,'#2a2532',11,2,2,12);
+ const win=new THREE.Mesh(new THREE.PlaneGeometry(3.6,2.4),new THREE.MeshBasicMaterial({map:texPix(wc),color:new THREE.Color(1.4,1.3,1.25)}));win.rotation.y=Math.PI;win.position.set(fx+2.4,HOME.padY+1.9,fz-0.03);g.add(win);
+ const wh=halo(0xffb35c,5,3.4,0.32);wh.position.set(fx+2.4,HOME.padY+1.9,fz-0.4);g.add(wh);
+ const [hc,hg]=cv(10,20);px(hg,'#1a1820',0,0,10,20);px(hg,'#ffcf8a',1,1,8,18);px(hg,'#d89a5a',1,10,8,1);
+ const hatch=new THREE.Mesh(new THREE.PlaneGeometry(1.1,2.2),new THREE.MeshBasicMaterial({map:texPix(hc),color:new THREE.Color(1.2,1.1,1)}));hatch.rotation.y=Math.PI;hatch.position.set(fx-1.2,HOME.padY+1.1,fz-0.03);g.add(hatch);
+ const pad=new THREE.Mesh(new THREE.BoxGeometry(5.6,0.2,4),new THREE.MeshLambertMaterial({color:0x22262e,emissive:0x07090c}));pad.position.set(fx,HOME.padY-0.1,fz-2);g.add(pad);
+ [[0,-4.05],[2.85,-2],[-2.85,-2]].forEach(([dx,dz],i)=>{const e=new THREE.Mesh(new THREE.BoxGeometry(i?0.06:5.6,0.06,i?4:0.06),new THREE.MeshBasicMaterial({color:new THREE.Color(CYA).multiplyScalar(1.4)}));e.position.set(fx+dx,HOME.padY+0.02,fz+dz);g.add(e);});
+ const ph=halo(0x8fe6ff,7,4,0.22);ph.position.set(fx,HOME.padY+0.3,fz-2);g.add(ph);
+ const bc=halo(0xff2a2a,1.2,1.2,0.8);bc.position.set(fx-2.8,HOME.padY+0.35,fz-4);g.add(bc);return bc;})();
+const RIDE_PATH=new THREE.CatmullRomCurve3([new V3(HOME.x-0.8,HOME.padY+1.4,HOME.face-2),new V3(HOME.x-2.5,HOME.padY+5,HOME.face-9),new V3(HOME.x-14,HOME.padY+3,HOME.face-22),
+ new V3(9,22,13),new V3(-7,12,7),new V3(-14.5,5,2.6),new V3(RIDE.dropX+1.6,1.45,-1.25)],false,'catmullrom',0.5);
+const rideT=new V3(),rideS=new V3(),rideUp=new V3(0,1,0),FLY_DUR=8.6,PAD_DUR=3.4;
+function startRide(){RIDE.on=true;RIDE.phase='pad';RIDE.t=0;RIDE.e=0;RIDE.yawPrev=null;lockInput=true;document.body.classList.add('riding');fig.visible=false;blob.visible=false;
+ const p0=RIDE_PATH.getPointAt(0);COP.active=true;COP.state='scripted';COP.x=p0.x;COP.y=p0.y;COP.z=p0.z;COP.v=0;COP.lock=0;COP.landed=false;COP.t=1;
+ COP.yaw=Math.PI*0.6;COP.pitch=0;COP.bank=0;COP.thrust=0.4;COP.aimFree=true;cop.visible=true;beam.visible=true;P.x=COP.x;
+ scene.fog.density=0.009;cine({lock:true,until:()=>!RIDE.on,ease:0.6,frame:rideFrame});CINE.k=9;}
+// the camera: outside his tower, then chasing the car across the city, then beside him at the drop-off
+function rideFrame(u,p,l){const ph=RIDE.phase;
+ if(ph==='pad'){p.set(HOME.x-12,HOME.padY+3,HOME.face-12);l.set(HOME.x-0.4,HOME.padY+1.4,HOME.face-1.5);}
+ else if(ph==='fly'){const k=Math.max(0,(RIDE.e-0.8)/0.2);const ch=1-k*k*(3-2*k);
+  rideS.crossVectors(rideT,rideUp).normalize();
+  p.set(COP.x-rideT.x*8.5+rideS.x*2.6,COP.y+2.6-rideT.y*4,COP.z-rideT.z*8.5+rideS.z*2.6);l.set(COP.x+rideT.x*10,COP.y-1.2+rideT.y*6,COP.z+rideT.z*10);
+  if(ch<1){p.lerp(cineP2.set(COP.x+1.4,1.9,10.5),1-ch);l.lerp(cineL2.set(COP.x-1.6,1.3,-1.4),1-ch);}}
+ else{p.set(P.x+1.8,1.45,10);l.set(P.x-2.4,1.35,-1.4);}}
+const cineP2=new V3(),cineL2=new V3();
+function tickRide(dt){if(!RIDE.on)return;RIDE.t+=dt;const ph=RIDE.phase,T=RIDE.t;homeBeacon.material.opacity=0.25+0.55*(0.5+0.5*Math.cos(t*Math.PI));
+ if(ph==='pad'){// waiting at the pad; he climbs in, the door shuts, the thrusters spool up and it lifts clear
+  COP.y=RIDE_PATH.getPointAt(0).y+Math.sin(T*1.6)*0.05;COP.thrust=0.35+0.65*Math.max(0,(T-1.6)/1.8);P.x=COP.x;
+  COP.aim.set(COP.x-6,HOME.padY-25,COP.z-14);
+  if(T>0.9&&!RIDE.doorShut){RIDE.doorShut=true;AUD.door();padRumble(0.3,0.4,200);}
+  if(T>PAD_DUR){RIDE.phase='fly';RIDE.t=0;RIDE.doorShut=false;}}
+ else if(ph==='fly'){// along the path, eased; nose into the curve, bank into the turns, pitch with the climb or dive
+  const s=Math.min(1,T/FLY_DUR),e=0.5-0.5*Math.cos(Math.PI*s);RIDE.e=e;const q=RIDE_PATH.getPointAt(e);RIDE_PATH.getTangentAt(e,rideT);
+  COP.x=q.x;COP.y=q.y;COP.z=q.z;P.x=COP.x;const yaw=Math.atan2(-rideT.z,rideT.x);let dy=RIDE.yawPrev==null?0:yaw-RIDE.yawPrev;if(dy>Math.PI)dy-=Math.PI*2;if(dy<-Math.PI)dy+=Math.PI*2;RIDE.yawPrev=yaw;
+  COP.yaw=yaw;COP.pitch=Math.asin(Math.max(-0.6,Math.min(0.6,rideT.y)))*0.9;COP.bank+=(Math.max(-0.5,Math.min(0.5,-dy/Math.max(dt,1e-3)*0.35))-COP.bank)*Math.min(1,dt*3);
+  COP.thrust=0.6+Math.max(0,rideT.y)*1.2;
+  // the searchlight sweeps the city below as it goes; rain streams past the camera at altitude
+  COP.aim.set(COP.x+rideT.x*14+Math.sin(T*0.9)*6,Math.min(0,COP.y-30),COP.z+rideT.z*14+Math.cos(T*0.7)*6);
+  rain.position.set(0,Math.max(0,COP.y-6),COP.z+1.2);
+  if(s>=1){RIDE.phase='land';RIDE.t=0;COP.bank=0;}}
+ else if(ph==='land'){COP.y+=(1.45-COP.y)*Math.min(1,dt*2);COP.pitch*=0.9;COP.yaw+=((Math.PI)-COP.yaw)*0.0;COP.thrust=0.45;P.x=RIDE.dropX;
+  COP.aimFree=false;rain.position.set(0,0,0);scene.fog.density+=(OUT_DEN-scene.fog.density)*Math.min(1,dt*2);
+  if(T>1.2){RIDE.phase='out';RIDE.t=0;scene.fog.density=OUT_DEN;AUD.door();padRumble(0.2,0.4,200);fig.visible=true;blob.visible=true;P.x=RIDE.dropX;P.face=-1;P.v=0;camInit=false;CINE.k=null;}}
+ else if(ph==='out'){if(T>1.1){RIDE.phase='away';RIDE.t=0;COP.yaw=null;COP.pitch=0;COP.state='leave';COP.dir=1;COP.v=2;}}
+ else if(ph==='away'){if(T>1.4)rideEnd();}}
+function rideEnd(){if(!RIDE.on)return;RIDE.on=false;RIDE.phase='';autoWalk=0;CINE.k=null;document.body.classList.remove('riding');fig.visible=true;blob.visible=true;
+ rain.position.set(0,0,0);scene.fog.density=OUT_DEN;if(Math.abs(P.x-RIDE.dropX)>0.5){P.x=RIDE.dropX;P.face=-1;}P.v=0;
+ if(COP.state==='scripted'){COP.yaw=null;COP.pitch=0;COP.bank=0;COP.aimFree=false;COP.x=RIDE.dropX+1.6;COP.y=1.6;COP.z=-1.25;COP.state='leave';COP.dir=1;COP.v=4;}
+ if(!storyMenu()&&!STORY.ended)lockInput=false;}
+// skipping: straight to him standing near the club and the car leaving
+function rideSkip(){if(!RIDE.on)return;P.x=RIDE.dropX;P.face=-1;camInit=false;rideEnd();}
 update(0.016);draw();
 requestAnimationFrame(()=>{fadeEl.style.opacity=0;});
 clock.getDelta();requestAnimationFrame(frame);
