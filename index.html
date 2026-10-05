@@ -84,14 +84,17 @@ body:not(.armed) .arm{display:none}
 #sableSub .who{display:none;color:var(--focus);font-size:13px;margin-right:6px}
 #sableSub.edge .who{display:inline}
 /* ---- the first night: title, story cards, objective, map, ending ---- */
-#topbar{z-index:25}#help{z-index:30}
+#topbar{z-index:25;transition:opacity .7s}#help{z-index:30}body.bars #topbar{opacity:.3}body.bars #topbar:hover,body.bars #topbar:focus-within{opacity:1}
 body.title #hud,body.title #hint,body.title #toggle,body.title #mapBtn,body.title #toast{display:none}
 body.unarmed #ammo{display:none}
 #skipHint .gp,body.pad #skipHint .kb{display:none}body.pad #skipHint .gp{display:inline}
 /* cinematic shots: letterbox bars, and the HUD steps out of the way */
 body::before,body::after{content:'';position:fixed;left:0;right:0;height:0;background:#000;z-index:15;pointer-events:none;transition:height .7s ease}
 body::before{top:0}body::after{bottom:0}
-body.bars::before,body.bars::after{height:9vh}
+body.bars::before,body.bars::after{height:max(9vh,calc((100vh - 100vw/2.4)/2))}
+/* scope framing in play: on a wide screen the picture is always 2:1 under the HUD (cut-scenes close it further to 2.4:1, above) */
+.scope{position:fixed;left:0;right:0;height:0;background:#000;pointer-events:none;transition:height .7s ease}#scopeT{top:0}#scopeB{bottom:0}
+@media (min-aspect-ratio:3/2){.scope{height:max(0px,calc((100vh - 100vw/2)/2))}}
 body.bars #hud,body.bars #hint,body.bars #prompt,body.bars #objMarker,body.bars #touch{opacity:0!important;pointer-events:none}
 #dialog,#sableSub,#agentSub,#mutter,#toast,#shout{z-index:16}
 @media (prefers-reduced-motion: reduce){body::before,body::after{transition:none}}
@@ -141,7 +144,7 @@ body.riding #skipHint{display:block}
 </style>
 </head>
 <body class="title unarmed">
-<canvas id="scene" aria-label="Playable pixel-art scene: a skinny young Black man with dreadlocks and a long coat walks a rain-slick elevated walkway past a noodle stall, while flying traffic drifts between neon-lit towers in the fog."></canvas>
+<canvas id="scene" aria-label="Playable pixel-art scene: a skinny young Black man with dreadlocks and a long coat walks a rain-slick elevated walkway past a noodle stall, while flying traffic drifts between neon-lit towers in the fog."></canvas><div class="scope" id="scopeT"></div><div class="scope" id="scopeB"></div>
 <div id="fade"></div>
 <div id="hud"><div aria-live="polite"><span id="credits">12</span> credits</div><div id="ammo" aria-label="Revolver ammunition"><canvas id="cyl" width="30" height="30"></canvas><span><b id="ammoNum">6</b> loaded</span><span class="dim"><span id="reserveNum">30</span> in pocket</span></div><div id="objective" hidden><span class="lbl">Objective</span><span id="objText"></span></div></div>
 <div id="topbar"><button id="soundBtn" type="button" aria-pressed="true">Sound on</button><button id="mapBtn" type="button" aria-controls="mapView">Map</button><button id="helpBtn" type="button" aria-expanded="false" aria-controls="help">Controls</button><button id="toggle" type="button" aria-pressed="false">Pause</button></div>
@@ -278,6 +281,29 @@ function texPix(c){const t=new THREE.CanvasTexture(c);t.magFilter=THREE.NearestF
 function texTile(c){const t=new THREE.CanvasTexture(c);t.magFilter=THREE.NearestFilter;t.minFilter=THREE.LinearMipmapLinearFilter;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=ANISO;return t;}
 function texSoft(c){const t=new THREE.CanvasTexture(c);t.magFilter=THREE.LinearFilter;t.minFilter=THREE.LinearFilter;t.generateMipmaps=false;return t;}
 function flip(c){const [d,g]=cv(c.width,c.height);g.translate(c.width,0);g.scale(-1,1);g.drawImage(c,0,0);return d;}
+// ---------- lit sprites: the scene's lights rim the pixel-art characters (the colours are worked out in 25_sprite_light.js) ----------
+// Every sprite texture gets a companion edge map: R = this pixel is on the sprite's left silhouette edge (1st pixel full, 2nd faint), G = right
+// edge, B = top edge. A lit material adds the colour of the light on each side to that side's edge, so a figure between a warm lamp and a
+// cyan sign gets a warm rim on one side and a cold one on the other, and stays a dark shape in between.
+const EDGE=new WeakMap(),EDGE0=texPix(cv(1,1)[0]);
+function edgeTex(tex){const img=tex&&tex.image;if(!img||!img.getContext)return EDGE0;let e=EDGE.get(tex);if(e&&e.v===tex.version)return e.t;
+ const w=img.width,h=img.height,d=img.getContext('2d').getImageData(0,0,w,h).data,[c,g]=cv(w,h),o=g.createImageData(w,h),q=o.data;
+ const A=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&d[(y*w+x)*4+3]>128;
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){if(!A(x,y))continue;const i=(y*w+x)*4;
+  q[i]=!A(x-1,y)?255:!A(x-2,y)?45:0;q[i+1]=!A(x+1,y)?255:!A(x+2,y)?45:0;q[i+2]=!A(x,y-1)?255:!A(x,y-2)?40:0;q[i+3]=255;}
+ g.putImageData(o,0,0);
+ if(e){e.t.image=c;e.t.needsUpdate=true;e.v=tex.version;}else{e={t:texPix(c),v:tex.version};EDGE.set(tex,e);}return e.t;}
+const LIT=[];// every lit sprite: {o: the sprite, R: its rim colours}
+function litSprite(o){const mat=o.material,R={L:new THREE.Color(0,0,0),R:new THREE.Color(0,0,0),T:new THREE.Color(0,0,0)};
+ // sat: how much of the sprite's own colour survives (the light, not the clothes, should colour a figure at night). Bright bodies are also
+ // compressed below the bloom threshold, so only the light (the rims) glows, never the pixel art itself
+ const U={edgeMap:{value:EDGE0},rimL:{value:R.L},rimR:{value:R.R},rimT:{value:R.T},sat:{value:1}};
+ mat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,U);
+  sh.fragmentShader='uniform sampler2D edgeMap;uniform vec3 rimL;uniform vec3 rimR;uniform vec3 rimT;uniform float sat;\n'+sh.fragmentShader.replace('#include <map_fragment>',
+   '#include <map_fragment>\n#ifdef USE_MAP\n diffuseColor.rgb=mix(vec3(dot(diffuseColor.rgb,vec3(0.3,0.55,0.15))),diffuseColor.rgb,sat);float lb=dot(diffuseColor.rgb,vec3(0.3,0.55,0.15));diffuseColor.rgb*=1.0/(1.0+max(0.0,lb-0.42)*2.2);\n vec3 eg=texture2D(edgeMap,vUv).rgb;diffuseColor.rgb+=rimL*eg.r+rimR*eg.g+rimT*eg.b;\n#endif');};
+ mat.customProgramCacheKey=()=>'litSprite';
+ o.onBeforeRender=()=>{U.edgeMap.value=edgeTex(mat.map);};
+ const e={o,R,U};LIT.push(e);return e;}
 
 const glowTex=(()=>{const [c,g]=cv(64,64);const gr=g.createRadialGradient(32,32,0,32,32,32);gr.addColorStop(0,'rgba(255,255,255,1)');gr.addColorStop(0.22,'rgba(255,255,255,.42)');gr.addColorStop(0.6,'rgba(255,255,255,.08)');gr.addColorStop(1,'rgba(255,255,255,0)');g.fillStyle=gr;g.fillRect(0,0,64,64);return texSoft(c);})();
 function halo(color,sx,sy,op){const m=new THREE.SpriteMaterial({map:glowTex,color:new THREE.Color(color),transparent:true,opacity:op,blending:THREE.AdditiveBlending,depthWrite:false,fog:false});const s=new THREE.Sprite(m);s.scale.set(sx,sy,1);s.renderOrder=6;return s;}
@@ -367,7 +393,7 @@ function makeSign(o){const c=signCanvas(o.n,o.vertical,o.col,o.icon);const mat=n
 const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat);m.position.set(o.x,o.y,o.z);if(o.ry)m.rotation.y=o.ry;scene.add(m);
 const dist=Math.hypot(o.x,o.z-8);const hl=halo(o.col,w*2.4,h*1.7,(o.haloOp||0.24)*Math.min(1,Math.exp(-(dist-12)*0.03)));hl.position.set(o.x,o.y,o.z-0.05);scene.add(hl);
 let light=null;if(o.light){light=new THREE.PointLight(o.col,o.light,10,2);light.position.set(o.x,o.y-0.5,o.z+1.4);scene.add(light);}
-const s={mat,hl,light,mode:o.mode||'steady',base:1.6,hb:hl.material.opacity,lb:o.light||0,t:rnd()*4,burst:0};signs.push(s);return s;}
+const s={x:o.x,y:o.y,z:o.z,col:o.col,mat,hl,light,mode:o.mode||'steady',base:1.6,hb:hl.material.opacity,lb:o.light||0,t:rnd()*4,burst:0};signs.push(s);return s;}
 function fz(i){return mids[i].front+0.06;}
 makeSign({x:-31.6,y:5,z:fz(1),n:6,vertical:true,col:MAG,p:0.11,mode:'buzz'});
 makeSign({x:-24,y:3.4,z:fz(2),n:5,vertical:false,col:CYA,p:0.09,mode:'broken',light:1.4});
@@ -412,7 +438,7 @@ const headMat=new THREE.MeshBasicMaterial({color:new THREE.Color(WARM).multiplyS
 const hl=halo(WARM,1.8,1.1,0.4);hl.position.set(x,3.0,z+0.68);scene.add(hl);
 const light=new THREE.PointLight(WARM,1.7,8,2);light.position.set(x,2.7,z+0.7);scene.add(light);
 const sh=shaft(new V3(x,3.0,z+0.65),new V3(x,0,z+0.95),0.12,1.25,WARM,0.55,0.03);
-lamps.push({headMat,hl,light,sh,flick:x===12,t:2,burst:0});});
+lamps.push({x,z,headMat,hl,light,sh,flick:x===12,t:2,burst:0});});
 
 const flood=shaft(new V3(-13.5,15,-7.5),new V3(-8.5,0,0.4),0.25,2.5,0x7fdde6,0.8,0.02);
 const spot=new THREE.SpotLight(0x7fdde6,3.2,32,0.19,0.7,1.5);spot.position.set(-13.5,15,-7.5);spot.target.position.set(-8.5,0,0.4);scene.add(spot);scene.add(spot.target);
@@ -469,7 +495,7 @@ const steam=[];for(let i=0;i<14;i++){const m=new THREE.SpriteMaterial({map:steam
 const FW=50,FH=50,GROUND=46,HIPX=19;
 const RIG={thigh:10,shin:10,torso:13,upper:6,fore:6.5,neck:2};
 const PC={skin:'#5b3a27',skinD:'#3d2519',skinL:'#8a5c3e',lip:'#4a2b1e',eye:'#0b0807',locs:'#18110d',locsL:'#33261d',locsT:'#4a3524',
-coat:'#33353d',skirt:'#2e3038',sleeveN:'#5d6372',sleeveF:'#22232a',rimW:'#b0835a',rimT:'#3f7480',pantN:'#272833',pantF:'#141519',shoe:'#07070a',shoeL:'#2a2c33'};
+coat:'#2a2c34',skirt:'#25272e',sleeveN:'#474c58',sleeveF:'#1b1c22',rimW:'#b0835a',rimT:'#2b3c46',pantN:'#22232c',pantF:'#121317',shoe:'#07070a',shoeL:'#2a2c33'};
 const D2R=Math.PI/180;
 function curve(keys,p){p=((p%1)+1)%1;for(let i=0;i<keys.length-1;i++){const a=keys[i],b=keys[i+1];if(p>=a[0]&&p<=b[0]){const u=(p-a[0])/(b[0]-a[0]||1);const s=(1-Math.cos(Math.PI*u))/2;return a[1]+(b[1]-a[1])*s;}}return keys[0][1];}
 // gait tables. Leg phase p=0: that leg's foot touches down. Arm phase q=0: that arm fully forward.
@@ -556,7 +582,7 @@ poly(g,PC.skirt,[wB,wF,fH,mH,bH]);tline(g,PC.rimT,wB,bH,1);
 drawLeg(g,J.near,J.hip,PC.pantN,PC.shoe);px(g,PC.shoeL,Math.round(J.near.toe[0]),Math.round(J.near.toe[1])-1);
 // torso
 const sF=add(J.sh,J.fw,2),sB=add(J.sh,J.fw,-2.4);poly(g,PC.coat,[sB,add(sF,J.up,0.8),wF,wB]);
-tline(g,'#3d4049',add(sF,J.up,0.5),lerp2(sF,wF,0.5),1);tline(g,PC.rimT,sB,wB,1);px(g,'#4a4d57',Math.round(J.sh[0])-1,Math.round(J.sh[1])-1,4,2);
+tline(g,'#353843',add(sF,J.up,0.5),lerp2(sF,wF,0.5),1);tline(g,PC.rimT,sB,wB,1);px(g,'#3e414b',Math.round(J.sh[0])-1,Math.round(J.sh[1])-1,4,2);
 drawHead(g,J.neck,P.locs,P.locW||0,!!P.lookUp,P.hair);
 c.meta={neck:J.neck.slice(),sh:J.sh.slice(),fw:J.fw.slice()};
 drawArm(g,J.armN,J.sh,PC.sleeveN,PC.mods&&PC.mods.chromeArm?'#e8eef4':PC.skin);
@@ -730,7 +756,7 @@ const SKINS=[['#5b3a27','#3d2519','#8a5c3e'],['#8d5a3b','#6a3f28','#b07a52'],['#
 const OUTFITS=[['#5a2a4a','#7a3a64'],['#2a3a5a','#3a5078'],['#5c5a24','#78763a'],['#6a6f78','#8a909a'],['#26262c','#3a3a44'],['#4a1e24','#6a2e36'],['#1e4a4a','#2e6a6a'],['#3a2a5a','#54407e']];
 const HAIRC=['#18110d','#2e1c12','#5a3418','#c8a060','#d0d0d4','#7a1e3a','#1a1a1a'];
 function npcPalette(r){const sk=SKINS[Math.floor(r()*SKINS.length)],o=OUTFITS[Math.floor(r()*OUTFITS.length)],h=HAIRC[Math.floor(r()*HAIRC.length)];
- return {skin:sk[0],skinD:sk[1],skinL:sk[2],lip:sk[1],locs:h,locsL:h,locsT:h,coat:o[0],skirt:o[0],sleeveN:o[1],sleeveF:o[0],rimW:o[1],rimT:o[1],pantN:'#22222a',pantF:'#141418',shoe:'#08080a',shoeL:'#3a3a44',eye:'#0b0807'};}
+ return {skin:sk[0],skinD:sk[1],skinL:sk[2],lip:sk[1],locs:h,locsL:h,locsT:h,coat:o[0],skirt:o[0],sleeveN:o[1],sleeveF:o[0],rimW:o[0],rimT:o[0],pantN:'#22222a',pantF:'#141418',shoe:'#08080a',shoeL:'#3a3a44',eye:'#0b0807'};}
 // dance moves: f is a step through a two-beat loop (8 steps)
 function dancePose(style,f,hair){const ph=f/8*Math.PI*2;const b=0.5-0.5*Math.cos(ph*2);// bounce, peaks on each beat
  let P;
@@ -764,9 +790,9 @@ const NEONS=['#ff2a4a','#3fe6f0','#9aff3a','#ff3d9a','#b06cff','#ffffff','#ffae3
 const RAVE_FITS=[['#141418','#202026'],['#1e1e24','#2c2c34'],['#0e0e12','#1c1c22'],['#26262c','#383842'],['#3a0e14','#5a1820'],['#b8c0c8','#dde3ea'],['#1a1030','#2a1a48'],['#0e2a26','#16403a']];
 function ravePalette(r){const sk=SKINS[Math.floor(r()*SKINS.length)],o=RAVE_FITS[Math.floor(r()*RAVE_FITS.length)],neon=NEONS[Math.floor(r()*NEONS.length)],neon2=NEONS[Math.floor(r()*NEONS.length)];
  const hair=r()<0.4?NEONS[Math.floor(r()*NEONS.length)]:HAIRC[Math.floor(r()*HAIRC.length)];
- const M={neon,neon2,chromeArm:r()<0.38,leds:r()<0.55,pauldron:r()<0.18,visor:r()<0.3,eyes:r()<0.6,grill:r()<0.16,tattoo:r()<0.35,implants:r()<0.4,chromeLegs:r()<0.14};
- if(Object.keys(M).filter(k=>M[k]===true).length<2){M.eyes=true;M.leds=true;}
- const rim=r()<0.5?neon:o[1];
+ const M={neon,neon2,chromeArm:r()<0.2,leds:r()<0.28,pauldron:r()<0.18,visor:r()<0.3,eyes:r()<0.6,grill:r()<0.16,tattoo:r()<0.35,implants:r()<0.4,chromeLegs:r()<0.14};
+ if(Object.keys(M).filter(k=>M[k]===true).length<2){M.eyes=true;M.tattoo=true;}
+ r();const rim=o[0];// outlines in their own dark clothes: the club's lights rim them (25_sprite_light.js). The r() keeps the random sequence
  return {skin:sk[0],skinD:sk[1],skinL:sk[2],lip:sk[1],locs:hair,locsL:hair,locsT:hair,coat:o[0],skirt:o[0],sleeveN:M.chromeArm?'#aeb8c2':o[1],sleeveF:o[0],rimW:rim,rimT:rim,pantN:M.chromeLegs?'#8a929c':'#18181e',pantF:'#101014',shoe:'#050506',shoeL:'#2a2a30',eye:'#0b0807',mods:M};}
 // techno dance moves (8 steps over two beats)
 function ravePose(style,f,hair){const ph=f/8*Math.PI*2;const b=0.5-0.5*Math.cos(ph*2),s=Math.sin(ph);let P;
@@ -844,8 +870,10 @@ s.renderOrder=9;scene.add(s);fgs.push(s);}
 
 // rain
 const RN=2200,rPos=new Float32Array(RN*6),drops=[];
-const rGeo=new THREE.BufferGeometry();rGeo.setAttribute('position',new THREE.BufferAttribute(rPos,3));
-const rain=new THREE.LineSegments(rGeo,new THREE.LineBasicMaterial({color:0xa9d4e0,transparent:true,opacity:0.3,depthWrite:false}));rain.frustumCulled=false;rain.renderOrder=8;scene.add(rain);
+// lit rain: each drop takes the colour of the lights it falls through (the lamps' cones, the signs' glow) and is only faint in the dark between
+const rCol=new Float32Array(RN*6);
+const rGeo=new THREE.BufferGeometry();rGeo.setAttribute('position',new THREE.BufferAttribute(rPos,3));rGeo.setAttribute('color',new THREE.BufferAttribute(rCol,3));
+const rain=new THREE.LineSegments(rGeo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.6,depthWrite:false}));rain.frustumCulled=false;rain.renderOrder=8;scene.add(rain);
 const WIND=-2.2;
 function resetDrop(d,cx,top){d.x=cx+R(-15,15);d.y=top?R(10,15):R(-2,15);d.z=R(-5,7.6);d.v=R(15,20);}
 for(let i=0;i<RN;i++){const d={};resetDrop(d,0,false);drops.push(d);}
@@ -859,7 +887,7 @@ vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*m
 fragmentShader:'uniform sampler2D tDiffuse;uniform vec2 delta;uniform vec2 res;uniform float maxBlur;varying vec2 vUv;void main(){float b=max(1.0-smoothstep(0.0,0.11,vUv.y),smoothstep(0.84,1.0,vUv.y));vec2 o=delta*b*maxBlur/res;vec4 s=texture2D(tDiffuse,vUv)*0.2270;s+=(texture2D(tDiffuse,vUv+o)+texture2D(tDiffuse,vUv-o))*0.1946;s+=(texture2D(tDiffuse,vUv+o*2.0)+texture2D(tDiffuse,vUv-o*2.0))*0.1216;s+=(texture2D(tDiffuse,vUv+o*3.0)+texture2D(tDiffuse,vUv-o*3.0))*0.0541;s+=(texture2D(tDiffuse,vUv+o*4.0)+texture2D(tDiffuse,vUv-o*4.0))*0.0162;gl_FragColor=s;}'};
 const GradeShader={uniforms:{tDiffuse:{value:null},time:{value:0},res:{value:new THREE.Vector2(1,1)}},
 vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-fragmentShader:'uniform sampler2D tDiffuse;uniform float time;uniform vec2 res;varying vec2 vUv;void main(){vec3 c=texture2D(tDiffuse,vUv).rgb;float l=dot(c,vec3(0.2126,0.7152,0.0722));c*=mix(vec3(0.82,1.02,1.08),vec3(1.1,0.97,0.84),smoothstep(0.05,0.7,l));c+=vec3(0.0,0.012,0.02)*(1.0-l);vec2 q=vUv-0.5;c*=1.0-dot(q,q)*0.95;float n=fract(sin(dot(floor(vUv*res)+fract(time)*61.0,vec2(12.9898,78.233)))*43758.5453);c+=(n-0.5)*0.03;gl_FragColor=vec4(c,1.0);}'};
+fragmentShader:'uniform sampler2D tDiffuse;uniform float time;uniform vec2 res;varying vec2 vUv;void main(){vec3 c=texture2D(tDiffuse,vUv).rgb;float l=dot(c,vec3(0.2126,0.7152,0.0722));c*=mix(vec3(0.82,1.02,1.08),vec3(1.1,0.97,0.84),smoothstep(0.05,0.7,l));c+=vec3(0.0,0.012,0.02)*(1.0-l);vec2 q=vUv-0.5;c*=1.0-dot(q,q)*0.95;float n=fract(sin(dot(floor(vUv*res)+fract(time)*61.0,vec2(12.9898,78.233)))*43758.5453);c+=(n-0.5)*0.055*(0.45+0.55*smoothstep(0.02,0.3,l));gl_FragColor=vec4(c,1.0);}'};
 let composer=null,tiltH,tiltV,grade;
 if(THREE.EffectComposer&&THREE.RenderPass&&THREE.ShaderPass&&THREE.UnrealBloomPass&&THREE.CopyShader&&THREE.LuminosityHighPassShader){
 try{composer=new THREE.EffectComposer(renderer);composer.setPixelRatio(PR);composer.setSize(innerWidth,innerHeight);
@@ -890,7 +918,7 @@ let hintT0=0,t=0,jellyT=0,paused=false,credits=12,ate=false,talked=false,moved=0
 const keys={left:false,right:false,run:false,crouch:false};const touch={left:false,right:false,run:false,crouch:false};const pad={left:false,right:false,run:false,crouch:false};
 let lockInput=false,autoWalk=0;// autoWalk: -1/+1 makes him walk on his own (cut-scenes), even while input is locked// title screen, story cards, ending: the hero doesn't move
 const lightXs=[[-36,0.8],[-24,0.8],[-12,0.8],[12,0.8],[24,0.8],[36,0.8],[0,1.3]];
-const baseCol=new THREE.Color(0.64,0.76,0.82),warmCol=new THREE.Color(1.22,0.95,0.76),tealAdd=new THREE.Color(0.05,0.28,0.32),magAdd=new THREE.Color(0.35,0.04,0.2),tmp=new THREE.Color();
+const baseCol=new THREE.Color(0.44,0.52,0.58),warmCol=new THREE.Color(0.98,0.76,0.6),tealAdd=new THREE.Color(0.05,0.28,0.32),magAdd=new THREE.Color(0.35,0.04,0.2),tmp=new THREE.Color();
 const dir=new V3(),camPos=new V3(),camLook=new V3(),headV=new V3();
 function flickerState(o,dt,chance){o.t-=dt;if(o.t<=0){o.burst=Math.random()<chance?1:0;o.t=o.burst?R(0.4,0.9):R(2.5,7);}return o.burst?(Math.random()<0.45?0.06:1):1;}
 
@@ -1083,6 +1111,7 @@ fig.position.set(P.x,P.y,0.7+(P.dz||0));blob.position.set(P.x,0.008,0.7+(P.dz||0
 let w=0;lightXs.forEach(([lx,k])=>{w+=Math.max(0,1-Math.abs(P.x-lx)/4.5)*k;});w=Math.min(1,w);
 tmp.copy(baseCol).lerp(warmCol,w);patrolTint(tmp);const tk=Math.max(0,1-Math.abs(P.x+8.5)/3),mk=Math.max(0,1-Math.abs(P.x-16.5)/3);
 tmp.r+=tealAdd.r*tk+magAdd.r*mk;tmp.g+=tealAdd.g*tk+magAdd.g*mk;tmp.b+=tealAdd.b*tk+magAdd.b*mk;if(LEVEL==='club')clubTint(tmp);if(LEVEL==='apt')aptTint(tmp,P.x);figMat.color.copy(tmp);if(GUN.flashT>0)figMat.color.setRGB(1.6,1.35,1.05);
+tickRim();tickForeground();// the lights' rims on every character (25_sprite_light.js)
 
 // interactions
 near=null;if(!dlgOpen&&!transit){let best=1e9;spots.forEach(s=>{if((s.lvl||'street')!==LEVEL)return;const d=Math.abs(P.x-s.x);if(d<s.r&&d<best){best=d;near=s;}});}
@@ -1122,11 +1151,14 @@ vehicles.forEach(v=>{v.g.position.x+=v.v*v.dir*dt;if(v.dir>0&&v.g.position.x>cx+
 for(let i=0;i<SN;i++){let x=sPos[i*3]+sVel[i]*dt;if(x>cx+150)x-=300;if(x<cx-150)x+=300;sPos[i*3]=x;}sGeo.attributes.position.needsUpdate=true;
 mists.forEach(m=>{m.m.position.x+=GUST.v*(0.12+m.v*0.3)*dt;if(m.m.position.x>cx+45)m.m.position.x-=90;if(m.m.position.x<cx-45)m.m.position.x+=90;});
 if(LEVEL==='street'){windNow+=((GUST.v-P.v*0.45)-windNow)*Math.min(1,dt*3);
+const rl=RIMP.street.filter(p=>p.k>0.01&&Math.abs(p.x-cx)<24);// the lights near the camera light the rain (25_sprite_light.js)
 for(let i=0;i<RN;i++){const d=drops[i];d.y-=d.v*dt;d.x+=windNow*dt;
 if(rainHitsBody(d)){resetDrop(d,cx,true);}
 else if(d.y<0||d.x<cx-16||d.x>cx+16){if(d.y<0&&Math.abs(d.z)<HALF&&Math.random()<0.35){spPos[spI*3]=d.x;spPos[spI*3+1]=0.02;spPos[spI*3+2]=d.z;spLife[spI]=0.12;spI=(spI+1)%SPN;}resetDrop(d,cx,d.y<0);}
-const k=i*6,len=0.38/d.v;rPos[k]=d.x;rPos[k+1]=d.y;rPos[k+2]=d.z;rPos[k+3]=d.x-windNow*len;rPos[k+4]=d.y+d.v*len;rPos[k+5]=d.z;}
-rGeo.attributes.position.needsUpdate=true;}
+const k=i*6,len=0.38/d.v;rPos[k]=d.x;rPos[k+1]=d.y;rPos[k+2]=d.z;rPos[k+3]=d.x-windNow*len;rPos[k+4]=d.y+d.v*len;rPos[k+5]=d.z;
+let r=0.13,g=0.16,b=0.19;for(const p of rl){const dx=d.x-p.x,dy=(d.y-p.y)*0.55,dz=d.z-p.z,rr=Math.min(5,p.r*0.5),q=dx*dx+dy*dy+dz*dz;if(q>=rr*rr)continue;const f=1-Math.sqrt(q)/rr,w=1.5*p.k*f*f;r+=p.c.r*w;g+=p.c.g*w;b+=p.c.b*w;}
+rCol[k]=r;rCol[k+1]=g;rCol[k+2]=b;rCol[k+3]=r*0.3;rCol[k+4]=g*0.3;rCol[k+5]=b*0.3;}
+rGeo.attributes.position.needsUpdate=true;rGeo.attributes.color.needsUpdate=true;}
 tickSpray(dt);
 for(let i=0;i<SPN;i++){if(spLife[i]>0){spLife[i]-=dt;if(spLife[i]<=0)spPos[i*3+1]=-999;}}spGeo.attributes.position.needsUpdate=true;}
 
@@ -1276,7 +1308,7 @@ function liveReload(name,fi,dirSet){const ph=GUN.rphase||'close';const u=GUN.rt/
  if(dirSet>0)liveG.drawImage(c,0,0);else{liveG.save();liveG.translate(FW,0);liveG.scale(-1,1);liveG.drawImage(c,0,0);liveG.restore();}
  liveTex.needsUpdate=true;liveTex.userData.meta=c.meta||null;return {tex:liveTex,muzzle:c.muzzle||null};}
 function figureTexture(name,fi,dirSet){
- if(GUN.mode==='holstered'||(GUN.mode==='drawing'&&GUN.t<0.04)){GUN.muzzle=null;if(isExtra(name)){const e=plainFrame(name,fi);return dirSet>0?e.R:e.L;}const s=SET[name];return (dirSet>0?s.R:s.L)[fi];}
+ if(GUN.mode==='holstered'||(GUN.mode==='drawing'&&GUN.t<0.04)){GUN.muzzle=null;if(isExtra(name)){const e=plainFrame(name,fi);return dirSet>0?e.R:e.L;}const s=SET[name];return heroLive(name,fi,dirSet)||(dirSet>0?s.R:s.L)[fi];}// empty-handed idle and gaits are drawn live (26_hero_motion.js)
  if(GUN.mode==='reload'&&name!=='pivot'&&name!=='pivotUp'){const r=liveReload(name,fi,dirSet);GUN.muzzle=r.muzzle;return r.tex;}
  const up=gunUpper(name);if(up==='draw0'&&GUN.mode==='holstering'&&GUN.t>0.2){GUN.muzzle=null;if(isExtra(name)){const e=plainFrame(name,fi);return dirSet>0?e.R:e.L;}const s=SET[name];return (dirSet>0?s.R:s.L)[fi];}
  const reloadUp=GUN.mode==='reload';const e=gunFrame(name,fi,up,(up==='aim'||up==='raise'||up==='kick1'||up==='kick2')?GUN.aimIdx:0,{cyl:up==='kick2'?GUN.cyl-1:0,loaded:reloadUp?ammo():0});
@@ -1568,7 +1600,7 @@ scene.traverse(o=>{if(o.isHemisphereLight||o.isDirectionalLight)o.userData.level
 // bouncer: big, bald, arms crossed
 const bouncerPal=Object.assign(npcPalette(crng),{coat:'#1c1c22',skirt:'#1c1c22',sleeveN:'#2a2a32',sleeveF:'#18181e',rimW:'#2e2e38',rimT:'#2e2e38',skin:'#4a2e20',skinD:'#321e14',skinL:'#6e4630',lip:'#321e14'});
 const bouncerFrames=npcFrames(bouncerPal,i=>{const br=Math.sin(i/4*Math.PI*2);return {lean:-2,shrug:0.4+0.3*br,headFwd:0.2,near:{t:6,k:3,b:0},far:{t:-6,k:3,b:0},armN:{a:58,e:112},armF:{a:50,e:118},coat:3,locs:0,locW:0,hair:'bald'};},4,true);
-const bouncer=new THREE.Sprite(new THREE.SpriteMaterial({map:bouncerFrames[0],alphaTest:0.5,transparent:false,color:new THREE.Color(0.95,0.85,1.05)}));
+const bouncer=new THREE.Sprite(new THREE.SpriteMaterial({map:bouncerFrames[0],alphaTest:0.5,transparent:false,color:new THREE.Color(0.72,0.64,0.8)}));
 bouncer.center.set(1-(HIPX+0.5)/FW,(FH-GROUND-1)/FH);bouncer.scale.set(FW*PIX*1.12,FH*PIX*1.12,1);bouncer.position.set(DOOR_X+2.0,0,-2.2);scene.add(bouncer);
 
 // ---------- the interior ----------
@@ -1674,7 +1706,7 @@ function resetCrowd(){PANIC.on=false;for(const n of NPCS){n.dn=0;n.run=false;n.g
 // ---------- the stampede spilling out onto the skywalk, if he steps out soon after ----------
 const RUNNERS=[];
 function spawnStreetRunners(){if(!DESIGNS.length)return;const n=Math.max(4,Math.round(16*Math.max(0,1-(t-PANIC.at)/45)));
- for(let i=0;i<16;i++){let r=RUNNERS[i];if(!r){const s=new THREE.Sprite(new THREE.SpriteMaterial({map:DESIGNS[0].Run.R[0],alphaTest:0.5,transparent:false}));s.scale.set(FW*PIX,FH*PIX,1);s.visible=false;scene.add(s);r=RUNNERS[i]={s};}
+ for(let i=0;i<16;i++){let r=RUNNERS[i];if(!r){const s=new THREE.Sprite(new THREE.SpriteMaterial({map:DESIGNS[0].Run.R[0],alphaTest:0.5,transparent:false}));s.scale.set(FW*PIX,FH*PIX,1);s.visible=false;scene.add(s);litSprite(s);r=RUNNERS[i]={s};}
   r.live=i<n;r.s.visible=false;if(!r.live)continue;r.d=DESIGNS[Math.floor(Math.random()*DESIGNS.length)];r.delay=0.25+i*0.22+Math.random()*0.3;r.dir=Math.random()<0.72?1:-1;
   r.x=DOOR_X+(Math.random()-0.5)*0.8;r.z=-2.3;r.zt=-1.4+Math.random()*3;r.sp=4+Math.random()*1.6;r.ph=Math.random();r.scr=Math.random()<0.4;}}
 function tickRunners(dt){if(LEVEL!=='street')return;for(const r of RUNNERS){if(!r.live)continue;if(r.delay>0){r.delay-=dt;continue;}
@@ -1724,10 +1756,10 @@ const V0=new V3(),V1=new V3();
 function aimMesh(m,from,to){V1.copy(to).sub(from);const len=V1.length();m.position.copy(from);m.scale.set(1,len,1);m.quaternion.setFromUnitVectors(DOWN,V1.normalize());}
 
 // a follow spot from the lighting rig keeps him readable in the crush
-const follow=new THREE.Mesh(shaftGeo(1,0.12,0.85),shaftMat(0xfff1dc,0.42,0.012));follow.renderOrder=5;club.add(follow);
+const follow=new THREE.Mesh(shaftGeo(1,0.12,0.85),shaftMat(0xfff1dc,0.3,0.012));follow.renderOrder=5;club.add(follow);
 const followPool=new THREE.Mesh(new THREE.PlaneGeometry(1.9,1.2),new THREE.MeshBasicMaterial({map:glowTex,color:0xfff0dc,transparent:true,opacity:0.5,blending:THREE.AdditiveBlending,depthWrite:false}));followPool.rotation.x=-Math.PI/2;followPool.renderOrder=3;club.add(followPool);
 const followSrc=new V3(),followAt=new V3();
-const backGlow=halo(0xfff0dc,1.7,2.6,0.32);club.add(backGlow);
+const backGlow=halo(0xfff0dc,1.5,2.4,0.12);club.add(backGlow);
 // a 1-pixel warm outline traced around his sprite and drawn on top of everything, so he reads through the crowd
 const outlineMat=new THREE.ShaderMaterial({uniforms:{map:{value:null},texel:{value:new THREE.Vector2(1/FW,1/FH)},color:{value:new THREE.Color(0.8,0.66,0.46)}},
  vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
@@ -1742,7 +1774,7 @@ function tickClub(dt){clubT=AUD.clubTime((clubT+dt)%SONG.len);const sec=songSect
  for(let i=0;i<eq.length;i++)eq[i]*=Math.pow(0.12,dt);
  drawLed(beat,ph);drawScreen(beat,ph);
  const pulse=1-ph*0.55;
- beams.forEach((b,i)=>{b.aim.set(b.src.x+Math.sin(clubT*0.6+b.ph)*3.2,0,-1.2+Math.sin(clubT*0.45+b.ph*1.3)*2.2);aimMesh(b.m,b.src,b.aim);
+ beams.forEach((b,i)=>{b.aim.set(b.src.x+Math.sin(clubT*0.6+b.ph)*3.2,0,-1.7+Math.sin(clubT*0.45+b.ph*1.3)*1.5);// over the dancers, behind his laneaimMesh(b.m,b.src,b.aim);
   b.m.material.uniforms.color.value.setHex(BEAMC[b.col]);b.m.material.uniforms.intensity.value=0.5*pulse+0.15;});
  spotA.position.copy(beams[1].src);spotA.target.position.copy(beams[1].aim);spotA.color.setHex(BEAMC[beams[1].col]);spotA.intensity=4.5*pulse;
  spotB.position.copy(beams[2].src);spotB.target.position.copy(beams[2].aim);spotB.color.setHex(BEAMC[beams[2].col]);spotB.intensity=4.5*pulse;
@@ -1792,9 +1824,9 @@ function tickClub(dt){clubT=AUD.clubTime((clubT+dt)%SONG.len);const sec=songSect
  // water still dripping off his coat for a while after coming in out of the rain
  if(dripT>0){dripT-=dt;if(Math.random()<dt*14*Math.min(1,dripT/6)){const hem=Math.random()<0.6;emit(beads,P.x-P.face*R(0,0.18)+R(-0.1,0.1),P.y+(hem?R(0.55,0.75):R(1.2,1.45)),0.7+R(-0.08,0.08),R(-0.1,0.1)-P.v*0.2,R(-0.4,0),R(-0.1,0.1),1.2);}}}
 const clubCol=new THREE.Color();
-function clubTint(c){c.setRGB(0.92,0.86,0.9);
+function clubTint(c){c.setRGB(0.6,0.56,0.64);
  if(P.x>CX-2.5&&P.x<CX+9.5){const k=1-(clubBeats%1)*0.6;const cc=LEDC[(beatIdx+Math.floor(beatIdx/8))%4];c.r+=cc[0]/255*0.35*k;c.g+=cc[1]/255*0.35*k;c.b+=cc[2]/255*0.35*k;}
- beams.forEach(b=>{const d=Math.hypot(P.x-b.aim.x,0.7-b.aim.z);if(d<1.3){clubCol.setHex(BEAMC[b.col]);const k=(1-d/1.3)*0.7;c.r+=clubCol.r*k;c.g+=clubCol.g*k;c.b+=clubCol.b*k;}});
+ beams.forEach(b=>{const d=Math.hypot(P.x-b.aim.x,0.7-b.aim.z);if(d<1.3){clubCol.setHex(BEAMC[b.col]);const k=(1-d/1.3)*0.3;c.r+=clubCol.r*k;c.g+=clubCol.g*k;c.b+=clubCol.b*k;}});
  const bk=Math.max(0,1-Math.abs(P.x-(CX-9))/4);c.r+=0.45*bk;c.g+=0.25*bk;}
 
 // ---------- moving between levels ----------
@@ -2419,7 +2451,7 @@ const agentsPresent=()=>AGENTS.some(a=>a.state==='listen');
 const agentEl=$('agentSub');let agentT=0,agentAt=null;const agentV=new V3(),aTint=new THREE.Color();
 // light in her corner: the cold tube, plus whichever moving head happens to sweep across
 function cornerTint(x,z,c){const kt=Math.max(0,1-Math.abs(x-(SABLE_X-0.9))/2.4);c.setRGB(0.62+0.2*kt,0.6+0.26*kt,0.74+0.3*kt);
- beams.forEach(b=>{const d=Math.hypot(x-b.aim.x,z-b.aim.z);if(d<1.4){clubCol.setHex(BEAMC[b.col]);const k=(1-d/1.4)*0.6;c.r+=clubCol.r*k;c.g+=clubCol.g*k;c.b+=clubCol.b*k;}});return c;}
+ beams.forEach(b=>{const d=Math.hypot(x-b.aim.x,z-b.aim.z);if(d<1.4){clubCol.setHex(BEAMC[b.col]);const k=(1-d/1.4)*0.25;c.r+=clubCol.r*k;c.g+=clubCol.g*k;c.b+=clubCol.b*k;}});return c;}
 function tickAgents(dt){for(const a of AGENTS){if(a.state==='gone')continue;
   if(PANIC.on&&a.state==='listen'){a.state='duck';a.t=-a.react;}
   let tex,f=1;
@@ -3001,7 +3033,7 @@ const fan=new THREE.Group();fan.position.set(AX-0.7,3.12,-0.9);apt.add(fan);
  const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.1,0.12,8),fm);fan.add(hub);[0,Math.PI/2].forEach(a=>{const b=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.018,0.17),fm);b.rotation.y=a;fan.add(b);});}aPool(-1.95,-1.9,0x3fe6f0,1.6,1.0,0.1);
 
 const aTintC=new THREE.Color();
-function aptTint(c,x){const r=x-AX;c.setRGB(0.6,0.58,0.74);
+function aptTint(c,x){const r=x-AX;c.setRGB(0.48,0.46,0.6);
  const w=Math.max(0,1-Math.abs(r+2)/2.4);c.r+=0.5*w;c.g+=0.3*w;c.b+=0.06*w;
  const n=Math.max(0,1-Math.abs(r-2.55)/1.9)*(0.85+0.15*Math.sin(r*7));c.r+=NEON.r*0.42*n;c.g+=NEON.g*0.42*n;c.b+=NEON.b*0.42*n;
  const d=Math.max(0,1-Math.abs(r-5.25)/1.2);c.r+=0.16*d;c.g+=0.04*d;c.b+=0.03*d;
@@ -3358,6 +3390,118 @@ function rideEnd(){if(!RIDE.on)return;RIDE.on=false;RIDE.phase='';autoWalk=0;CIN
  if(!storyMenu()&&!STORY.ended)lockInput=false;}
 // skipping: straight to him standing near the club and the car leaving
 function rideSkip(){if(!RIDE.on)return;P.x=RIDE.dropX;P.face=-1;camInit=false;rideEnd();}
+// ================= SPRITE LIGHT: which lights rim each character, every frame =================
+// The look both The Last Night and Replaced share: characters are dark shapes, and the lights around them draw them, a one-pixel rim in the
+// light's own colour on the side facing it. Lights are probes per level. Each frame every lit sprite (litSprite in 01) gathers the probes
+// near it: a light to its left rims its left edge, one to its right the right edge, one overhead the top. A light behind the figure (further
+// from the camera) rims harder than one in front of it, the way a backlit silhouette does. Moving lights (club beams, the patrol's
+// searchlight, flickering signs) refresh themselves each frame through upd().
+const RIMP={street:[],club:[],apt:[]};
+function rimProbe(lvl,o){o.c=o.c||new THREE.Color(o.col);o.k0=o.k;RIMP[lvl].push(o);return o;}
+// the street: sodium lamps, the nearer neon signs, Teo's lanterns, the Low Tide's door, and the patrol's searchlight
+lamps.forEach(l=>rimProbe('street',{x:l.x,y:2.9,z:l.z+0.7,col:WARM,k:0.8,r:5.2,upd(){this.k=this.k0*l.light.intensity/1.7;}}));
+signs.forEach(s=>{if(s.z<-9.5||Math.abs(s.x)>60)return;rimProbe('street',{x:s.x,y:s.y,z:s.z,col:s.col,k:s.light?0.8:0.55,r:s.light?12:11,upd(){this.k=this.k0*Math.min(1.3,s.mat.color.r/1.6);}});});
+rimProbe('street',{x:SX,y:2.2,z:-1.4,col:0xffb25a,k:0.7,r:4.2});
+rimProbe('street',{x:DOOR_X,y:1.6,z:-2.6,col:0xb24cff,k:0.5,r:4.5});
+rimProbe('street',{x:0,y:7,z:0.7,col:0xe8f3ff,k:0,r:3.2,upd(){if(!COP.active||!copSpot.intensity){this.k=0;return;}this.x=COP.aim.x;this.z=COP.aim.z-0.4;this.k=1.4*Math.min(1,copSpot.intensity/6.5);}});
+// the Low Tide: the four moving beams, the LED wall behind the dancers, the bar's warm light, SABLE's cold tube in her corner
+beams.forEach(b=>rimProbe('club',{x:b.aim.x,y:3.6,z:-0.2,col:0xffffff,k:0,r:2.0,upd(){this.x=b.aim.x;this.z=b.aim.z-0.5;this.c.setHex(BEAMC[b.col]);this.k=1.1*b.m.material.uniforms.intensity.value;}}));
+rimProbe('club',{x:CX+3.5,y:2.4,z:-4.2,col:0xffffff,k:0.6,r:8,upd(){const cc=LEDC[((beatIdx+Math.floor(beatIdx/8))%4+4)%4];this.c.setRGB(cc[0]/255,cc[1]/255,cc[2]/255);this.k=this.k0*(1-(clubBeats%1)*0.55);}});
+rimProbe('club',{x:CX-9,y:2.2,z:-2.6,col:0xffa040,k:0.7,r:5});
+rimProbe('club',{x:SABLE_X,y:3.2,z:-1.6,col:0xbfe8ff,k:0.85,r:4.2});
+// his apartment: the desk lamp, the neon through the window, the door's red standby light, the terminal while it calls
+rimProbe('apt',{x:AX-2,y:1.3,z:-0.9,col:0xffb066,k:0.75,r:2.8});
+rimProbe('apt',{x:AX+2.55,y:1.7,z:-1.6,col:0xff3a9e,k:0.7,r:2.8,upd(){this.c.copy(NEON);}});
+rimProbe('apt',{x:AX+5.25,y:1.6,z:-1.4,col:0xff4030,k:0.3,r:1.8});
+rimProbe('apt',{x:AX-1.95,y:1.2,z:-1.1,col:0x3fe6f0,k:0,r:2,upd(){this.k=aTerm==='alert'?0.5*(0.5+0.5*Math.sin(aT*Math.PI)):0.12;}});
+// who is lit: the hero, the people on the street, everyone in the club
+const RIM_HERO=litSprite(fig);RIM_HERO.U.sat.value=0.8;
+[vendor,bouncer,dj,bartender,sable].forEach(o=>litSprite(o));
+AGENTS.forEach(a=>{litSprite(a.s).U.sat.value=0.6;});
+// the dancers are a dark mass the lights pick out, not a wall of coloured clothes
+NPCS.forEach(n=>{const e=litSprite(n.s);e.gain=0.85;e.U.sat.value=0.45;n.shade*=0.7;});
+function shownInScene(o){for(;o;o=o.parent)if(!o.visible)return false;return true;}
+function tickRim(){const L=RIMP[LEVEL]||[];for(const p of L)if(p.upd)p.upd();
+ for(const e of LIT){const o=e.o,R=e.R;R.L.setRGB(0,0,0);R.R.setRGB(0,0,0);R.T.setRGB(0,0,0);if(!shownInScene(o))continue;
+  const x=o.position.x,y=o.position.y+1.0,z=o.position.z,g=e.gain||1;
+  for(const p of L){if(p.k<=0)continue;const dx=p.x-x,dy=p.y-y,dz=p.z-z,d=Math.hypot(dx,dy*0.5,dz);if(d>=p.r)continue;
+   const f=1-d/p.r,w=1.2*p.k*f*f*(dz<0?1.25:0.6)*g,s=dx/(Math.abs(dx)+0.45);
+   if(s<0)R.L.r+=p.c.r*w*-s,R.L.g+=p.c.g*w*-s,R.L.b+=p.c.b*w*-s;else R.R.r+=p.c.r*w*s,R.R.g+=p.c.g*w*s,R.R.b+=p.c.b*w*s;
+   const top=w*(dy>0?0.15+0.45*dy/(Math.abs(dy)+1):0.05)*(1-0.7*Math.abs(s));R.T.r+=p.c.r*top;R.T.g+=p.c.g*top;R.T.b+=p.c.b*top;}
+  // the figures are thin (two-pixel limbs), so lit on both sides they'd just look pale: the brighter side wins, the other stays a hint
+  const lL=R.L.r+R.L.g+R.L.b,lR=R.R.r+R.R.g+R.R.b;if(lL>lR)R.R.multiplyScalar(0.3);else R.L.multiplyScalar(0.3);
+  for(const c of [R.L,R.R,R.T]){const m=Math.max(c.r,c.g,c.b);if(m>0.85)c.multiplyScalar(0.85/m);}}}
+// ================= HERO MOTION: his body drawn live, with follow-through =================
+// With his hands empty, the idle and the four gaits are drawn live from the rig instead of from the baked frame sets, so:
+// - his coat and his locs are springs. They chase the pose's own coat and locs angles, overshoot and settle, so when he stops from a run
+//   the coat swings forward past him before it hangs, and when he turns it whips round (it keeps moving the old way for a moment);
+// - changing gait (idle to walk, walk to run, run to a stop) blends the poses over a tenth of a second instead of cutting;
+// - his idle breathes continuously instead of stepping through four frames.
+// The gait's leg phase stays on the baked 16 steps and the sprite is redrawn at 30 fps, so he still reads as drawn pixel-art frames
+// rather than a 60 fps smear.
+const HM={c:null,g:null,tex:null,last:-1,cur:null,curRoot:0,from:null,fromRoot:0,name:'',blend:1,face:1,drawT:0,
+ coat:{x:8,v:0,k:110,d:9},locs:{x:10,v:0,k:70,d:6},locW:{x:0,v:0,k:90,d:7}};
+const HM_LIVE={idle:1,walk:1,run:1,sneak:1,drive:1};
+(()=>{const [c,g]=cv(FW,FH);HM.c=c;HM.g=g;HM.tex=texPix(c);})();
+function hmSpring(s,target,dt){const n=Math.max(1,Math.ceil(dt/0.008)),h=dt/n;for(let i=0;i<n;i++){s.v+=(-s.k*(s.x-target)-s.d*s.v)*h;s.x+=s.v*h;}return s.x;}
+function heroLive(name,fi,dirSet){if(!HM_LIVE[name])return null;
+ const gap=HM.last<0?1:t-HM.last,dt=Math.min(0.05,Math.max(0,gap));HM.last=t;
+ const fresh=gap>0.15;// coming back from a baked move (a jump, a skid): no blending from a stale pose
+ // the pose this frame: the gait at its baked step, or the idle breathing continuously
+ let Q,root;
+ if(name==='idle'){const i=(t*2.2)%4;Q=idlePose(i);
+  // standing still he isn't a statue: his weight drifts from foot to foot, and every so often he glances up at the rain
+  const sh=Math.sin(t*0.42),gl=Math.max(0,Math.sin(t*0.23)-0.82)/0.18;
+  Q.lean+=1.4*sh;Q.near.t+=2*sh;Q.far.t-=2*sh;Q.headFwd=Math.max(0,Q.headFwd-0.6*gl);Q.lookUp=gl>0.6;
+  root=rootFor(Q,'any')+0.6*Math.max(0,Math.sin((i-0.5)/4*Math.PI*2));}
+ else{const p=fi/NF;Q=gaitPose(name,p);root=stanceRoot(name,p);}
+ // a change of gait blends from the pose he was just in
+ if(name!==HM.name){HM.name=name;if(HM.cur&&!fresh){HM.from=HM.cur;HM.fromRoot=HM.curRoot;HM.blend=0;}else HM.blend=1;}
+ if(fresh)HM.blend=1;
+ HM.blend=Math.min(1,HM.blend+dt/0.11);
+ if(HM.blend<1){const u=HM.blend*HM.blend*(3-2*HM.blend);Q=lerpPose(HM.from,Q,u);root=HM.fromRoot+(root-HM.fromRoot)*u;}
+ HM.cur=Q;HM.curRoot=root;
+ // turning round: the coat and locs keep travelling the old way, which in his new facing is forward
+ if(dirSet!==HM.face){HM.face=dirSet;if(!fresh){HM.coat.x*=-0.5;HM.locs.x*=-0.6;HM.coat.v*=-0.5;HM.locs.v*=-0.6;}}
+ if(fresh){HM.coat.x=Q.coat;HM.locs.x=Q.locs;HM.locW.x=Q.locW||0;HM.coat.v=HM.locs.v=HM.locW.v=0;}
+ const cw=hmSpring(HM.coat,Q.coat,dt),lw=hmSpring(HM.locs,Q.locs,dt),sw=hmSpring(HM.locW,Q.locW||0,dt);
+ // redraw on twos
+ HM.drawT-=dt;if(HM.drawT>0&&!fresh)return HM.tex;HM.drawT=1/30;
+ const c=drawFigure(Object.assign({},Q,{coat:cw,locs:lw,locW:sw}),root);HM.g.clearRect(0,0,FW,FH);
+ if(dirSet>0)HM.g.drawImage(c,0,0);else{HM.g.save();HM.g.translate(FW,0);HM.g.scale(-1,1);HM.g.drawImage(c,0,0);HM.g.restore();}
+ HM.tex.needsUpdate=true;HM.tex.userData.meta=c.meta||null;return HM.tex;}
+// ================= FOREGROUND: out-of-focus shapes between the camera and the room =================
+// Both The Last Night and Replaced frame nearly every shot through something close to the lens: a plant, a chair, the backs of heads.
+// It sells the depth and fills the bottom of the frame. These are small canvases drawn as plain silhouettes and magnified with linear
+// filtering, so they come out soft; they are near-black, with only a dim edge where the room's light catches them.
+function fgShape(w,h,draw){const [c,g]=cv(w,h);g.fillStyle='#030406';draw(g);return texSoft(c);}
+const fgEll=(g,x,y,rx,ry)=>{g.beginPath();g.ellipse(x,y,rx,ry,0,0,Math.PI*2);g.fill();};
+function fgSprite(group,tex,x,y,z,sx,sy){const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false,fog:false}));
+ s.center.set(0.5,0);s.scale.set(sx,sy,1);s.position.set(x,y,z);s.renderOrder=9;group.add(s);FG_ALL.push({s,group});return s;}
+const FG_ALL=[];
+// his apartment: the back of an armchair, a tall plant, a floor lamp, a crate of records, between the camera and the room
+fgSprite(apt,fgShape(48,32,g=>{g.fillRect(4,10,40,22);fgEll(g,10,12,8,8);fgEll(g,38,12,8,8);g.fillRect(8,4,32,12);fgEll(g,24,6,16,4);
+ g.fillStyle='#4a3424';g.fillRect(12,2,24,1);g.fillRect(9,4,3,1);}),AX-3.7,-0.7,5.1,2.4,1.6);
+fgSprite(apt,fgShape(40,56,g=>{g.fillRect(14,40,12,16);for(const [x,y,rx,ry] of [[20,30,4,12],[10,22,4,10],[30,20,4,11],[6,32,4,7],[34,32,4,7],[16,12,3,9],[25,10,3,8]])fgEll(g,x,y,rx,ry);
+ g.fillStyle='#14262a';fgEll(g,30,12,1.5,3);fgEll(g,16,6,1,3);}),AX+1.3,-0.75,5.5,1.6,2.3);
+fgSprite(apt,fgShape(24,72,g=>{g.fillRect(11,20,2,52);g.fillRect(6,68,12,4);g.beginPath();g.moveTo(4,20);g.lineTo(20,20);g.lineTo(16,4);g.lineTo(8,4);g.closePath();g.fill();
+ g.fillStyle='#a0683a';g.fillRect(5,19,14,2);}),AX+4.7,-0.55,4.9,0.75,2.6);
+// the Low Tide: the backs of heads and shoulders along the bottom of the frame, bobbing on the beat
+const FG_CLUB=[];
+(()=>{const rims=['#8a3060','#2a6a70','#5a3a88','#7a2430','#5a5a66'];
+ for(let i=0;i<12;i++){const rim=rims[i%rims.length],kind=i%4;
+  const tex=fgShape(40,30,g=>{fgEll(g,20,30,19,10);g.fillRect(4,22,32,8);fgEll(g,20,12,7,9);g.fillRect(16,18,8,6);
+   if(kind===1){fgEll(g,13,7,3,4);fgEll(g,27,7,3,4);}if(kind===2)fgEll(g,20,3,6,3);if(kind===3){fgEll(g,24,16,8,7);}
+   g.fillStyle=rim;g.fillRect(15,3,10,1);g.fillRect(5,21,6,1);g.fillRect(29,21,6,1);});
+  const x=CX-16+i*2.8+(i%2)*0.7,z=4.7+(i%3)*0.4;
+  const s=fgSprite(club,tex,x,-0.62+(i%3)*0.07,z,1.9,1.45);FG_CLUB.push({s,y0:s.position.y,ph:i*0.37});}})();
+function tickForeground(){
+ // a shape fades away while it's in front of him on screen: compare where each lands, seen from the camera, with where he stands
+ const cx=camera.position.x,cz=camera.position.z,hx=(P.x-cx)/(cz-0.7);
+ for(const f of FG_ALL){if(!f.group.visible)continue;const s=f.s,d=cz-s.position.z,sx=(s.position.x-cx)/d,half=s.scale.x*0.5/d+0.12;
+  s.material.opacity=Math.max(0.1,Math.min(1,0.1+(Math.abs(sx-hx)-half)/0.1));}
+ if(LEVEL!=='club')return;const b=clubBeats||0;
+ for(const f of FG_CLUB){f.s.visible=!PANIC.on;f.s.position.y=f.y0+0.05*Math.abs(Math.sin((b+f.ph)*Math.PI));}}
 update(0.016);draw();
 requestAnimationFrame(()=>{fadeEl.style.opacity=0;});
 clock.getDelta();requestAnimationFrame(frame);
